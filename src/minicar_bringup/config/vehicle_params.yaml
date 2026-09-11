@@ -1,0 +1,52 @@
+# Jetson実機で動かすtt02の車両諸元とFTG+MPPIが守る動作制約。
+#
+# 初期値はシミュレーション環境から移植した値であり、実機校正済みではない。
+# wheelbase、車幅、LiDAR取付位置、速度・加速度・操舵限界、操舵応答を実測し、
+# 安全を確保したうえで実機値へ更新すること。
+
+vehicle:
+  # 初期値。実車を計測して更新すること。
+  wheelbase: 0.257          # [m] 前輪 x=+0.1285 / 後輪 x=-0.1285
+  track: 0.166              # [m]
+  wheel_radius: 0.0315      # [m]
+
+  # 衝突判定に使うべき「実際の最大幅」。
+  # ボディ箱は 0.15m だが、タイヤ(y=±0.083, 幅0.024)が外側 0.095m まで
+  # はみ出しているので、車の最大幅は 0.19m。
+  # 安全余裕をボディ箱で見積もると片側 2cm 甘くなる。
+  half_width: 0.095         # [m] タイヤ外側まで
+  body_half_width: 0.075    # [m] ボディ箱のみ（参考値）
+
+  # bicycle model の原点を後輪車軸に取る場合の LiDAR オフセット。
+  # chassis 原点(=ホイールベース中心)から lidar は x=+0.10、
+  # 後輪車軸は x=-0.1285 なので 0.10 - (-0.1285) = 0.2285。
+  lidar_x_from_rear_axle: 0.2285   # [m]
+  lidar_z: 0.045                   # [m] chassis 相対
+
+limits:
+  v_min: -1.0               # [m/s] 後退あり。ただし後述の理由で通常は使わない
+  v_max: 2.0                # [m/s]
+  a_max: 2.0                # [m/s^2] 加減速とも同値
+  r_min: 1.0                # [m] 最小旋回半径
+
+  # r_min から導出: delta_max = atan(wheelbase / r_min)
+  #   = atan(0.257 / 1.0) = 0.2516 rad = 14.41 deg
+  # 実機の機械限界とサーボ指令範囲を確認して更新すること。
+  delta_max: 0.2516         # [rad]
+
+  # v_max / r_min = 2.0。Twist に変換したときの angular.z の上限。
+  yaw_rate_max: 2.0         # [rad/s]
+
+  # 車両側がTwistからdelta = atan(omega * L / v)相当で舵角を作る前提。
+  # v=0では据え切りできないため、MPPIのサンプリングでvの下限を
+  # 正側に切っておかないと「止まって向きを変える」実行不能な解が出る。
+  v_min_forward: 0.3        # [m/s] 前進サンプリングの下限
+
+lidar:
+  # 参考値。実機LiDARのLaserScanメッセージと一致させること。
+  num_beams: 640
+  angle_min: -2.356         # [rad] -135 deg
+  angle_max: 2.356          # [rad] +135 deg
+  range_min: 0.1            # [m]
+  range_max: 30.0           # [m]
+  update_rate: 10.0         # [Hz] MPPI の実効制御周期の上限を決める

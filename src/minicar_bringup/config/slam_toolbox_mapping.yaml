@@ -1,0 +1,108 @@
+# slam_toolbox 地図作成(mapping)設定。
+#
+# ベースは f1tenth_gym_ros/launch/slam/f1tenth_gym_online_async.yaml。
+# ただし向こうは 20m 級 LiDAR 前提なので、距離まわりは全部引き直している。
+# 「### 2m」印の付いた項目がそれ。センシング半径が 2m しかないという
+# 一点から機械的に導かれるもので、f1tenth の値をそのまま流用すると破綻する。
+#
+# Jetson実機用。ホスト側のTF odom -> base_linkとセンサ静的TFを参照し、
+# slam_toolboxはmap -> odomだけをpublishする。
+
+slam_toolbox:
+  ros__parameters:
+
+    # ---- ソルバ ----
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    # ---- フレームとトピック ----
+    # slam_toolboxは/odomトピックではなく、このTFをオドメトリとして読む。
+    # Jetsonホストのrobot_localizationがpublishしていることが必須。
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_link
+    # 生の/scanではなくscan_filter_nodeの出力を使う。
+    scan_topic: /scan_filtered
+    use_sim_time: false
+    mode: mapping
+
+    # ---- 動作 ----
+    debug_logging: false
+    throttle_scans: 1
+    transform_publish_period: 0.02
+    map_update_interval: 1.0    # 地図が 10.5x5.7m と小さいので更新が安い
+    resolution: 0.025           # 通路幅 0.82m に対し 0.05 では粗い
+    ### 2m: LiDAR は 30m 出るが、壁を越えないと保証できるのは 2m まで
+    max_laser_range: 2.0
+    # gz の gpu_lidar / 実機 TG30 いずれも下限 0.1m なので明示しておく。
+    #
+    # 注: これを 0.1 にしても起動時の警告
+    #   "minimum laser range setting (0.1 m) exceeds the capabilities of
+    #    the used Lidar (0.1 m)"
+    # は消えない。slam_toolbox 側の比較が >= になっているため、LiDAR の
+    # 下限とちょうど一致させても発火する。動作は「範囲内にクリップ」で
+    # 正しいので、この警告は無視してよい（値を 0.0 に戻しても同じ警告が
+    # 数字違いで出るだけ）。
+    min_laser_range: 0.1
+    ### 2m: LiDAR 10Hz が実質の律速。ここで更に間引かない
+    minimum_time_interval: 0.0
+    transform_timeout: 0.2
+    tf_buffer_duration: 30.
+    stack_size_to_use: 40000000
+    enable_interactive_mode: true
+
+    # ---- スキャンマッチング ----
+    use_scan_matching: true
+    use_scan_barycenter: true
+    ### 2m: センシング半径が 2m しかないので、キーフレーム間隔もそれに比例
+    ### して詰める。既定 0.5 では隣接スキャンの重なりが足りない。
+    minimum_travel_distance: 0.10
+    minimum_travel_heading: 0.2
+    scan_buffer_size: 20        # 0.10m x 20 = 2m 分の走行を保持
+    ### 2m: 既定 10.0 はセンサ距離を超えており無意味
+    scan_buffer_maximum_scan_distance: 2.5
+    link_match_minimum_response_fine: 0.1
+    ### 2m: 既定 1.5 は 2m 半径に対して離れすぎ。重なりの無いスキャン同士を
+    ### リンクしようとして失敗する。
+    link_scan_maximum_distance: 0.6
+
+    # ---- ループ閉じ込み ----
+    # 本構成で一番怖いのは「誤ループ閉じ込み」。コース面積の 2/3 は
+    # 両側の壁しか見えない廊下で、スキャンマッチングが縦方向を全く拘束
+    # しない。候補を近傍に限定してオドメトリ事前分布で曖昧性を潰す。
+    do_loop_closing: true
+    ### 2m: これ以上離れたループ候補はスキャンが重ならない
+    loop_search_maximum_distance: 1.5
+    ### 2m: キーフレームが 0.10m 間隔と密になった分、同じ物理長(約1.5m)を
+    ### 表すのにノード数を増やす。単一スキャンより構造が増えるので誤マッチ
+    ### が起きにくくなる。
+    loop_match_minimum_chain_size: 15
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine: 0.45
+
+    # ---- 相関スキャンマッチャの探索窓 ----
+    ### 2m: キーフレームが密で事前姿勢が良いので探索窓を狭められる
+    correlation_search_space_dimension: 0.3
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    ### 2m: 既定 8.0 は 10.5x5.7m のコースには過大。1周のオドメトリ誤差
+    ### (約1.1% x 25m = 27cm)を覆えれば足りる。
+    loop_search_space_dimension: 4.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # ---- スキャンマッチャのペナルティ ----
+    distance_variance_penalty: 0.5
+    angle_variance_penalty: 1.0
+    fine_search_angle_offset: 0.00349
+    coarse_search_angle_offset: 0.349
+    coarse_angle_resolution: 0.0349
+    minimum_angle_penalty: 0.9
+    minimum_distance_penalty: 0.5
+    use_response_expansion: true

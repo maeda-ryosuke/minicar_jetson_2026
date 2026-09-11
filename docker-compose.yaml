@@ -1,0 +1,28 @@
+services:
+  jetson:
+    image: jetson_humble:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jetson_humble
+
+    # Jetson ホスト上の ROS 2 graph へ DDS で直接参加する。
+    network_mode: host
+    # Fast DDS は host network の参加者を同一ホストと判定して SHM を選ぶため、
+    # ホストとコンテナで IPC namespace も共有する必要がある。
+    ipc: host
+
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      ROS_LOCALHOST_ONLY: ${ROS_LOCALHOST_ONLY:-0}
+      # docker compose exec jetson bash -c "..." のような非対話 bash 用。
+      BASH_ENV: /etc/minicar/ros_setup.bash
+
+    volumes:
+      - ./maps:/maps:rw
+
+    # 実機ノードは用途ごとに明示起動する。コンテナ起動だけでは走行指令を出さない。
+    command: bash
+    stdin_open: true
+    tty: true

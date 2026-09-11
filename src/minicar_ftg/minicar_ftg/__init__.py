@@ -1,0 +1,1 @@
+"""Minicar ftg package."""
