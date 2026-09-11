@@ -11,6 +11,8 @@ services:
     # Fast DDS は host network の参加者を同一ホストと判定して SHM を選ぶため、
     # ホストとコンテナで IPC namespace も共有する必要がある。
     ipc: host
+    devices:
+      - "${LIDAR_DEVICE:-/dev/ttyUSB0}:/dev/ttyUSB0"
 
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
@@ -22,7 +24,8 @@ services:
     volumes:
       - ./maps:/maps:rw
 
-    # 実機ノードは用途ごとに明示起動する。コンテナ起動だけでは走行指令を出さない。
-    command: bash
+    # センサとその静的TFのみ自動起動。SLAM・MPPIは手動起動する。
+    command: ["ros2", "launch", "minicar_bringup", "sensors.launch.py"]
+    restart: unless-stopped
     stdin_open: true
     tty: true

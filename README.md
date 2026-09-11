@@ -1,6 +1,6 @@
 # jetson_humble
 
-Jetson実機上でROS 2 Humble、SLAM Toolbox、FTG/MPPIを動かすDocker環境。
+Jetson実機上でTG30 LiDAR、ROS 2 Humble、SLAM Toolbox、FTG/MPPIを動かすDocker環境。
 Gazebo、RViz2、`robot_localization`はコンテナに含めない。
 
 このディレクトリは自己完結しており、`minicar_gazebo/`を参照しない。
@@ -11,11 +11,15 @@ Gazebo、RViz2、`robot_localization`はコンテナに含めない。
 
 | パッケージ | 内容 |
 | --- | --- |
-| `minicar_scan` | SLAM用scanフィルタと設定 |
+| `minicar_scan` | TG30起動・設定・静的TF、SLAM用scanフィルタ |
 | `minicar_ftg` | FTG目標点生成と設定 |
 | `minicar_mppi` | MPPIノード、ROS非依存コア、設定、オフラインテスト |
 | `minicar_safety` | 指令監視・制限・停止・復帰と設定 |
 | `minicar_bringup` | 統合launch、SLAM設定、共有車両諸元 |
+
+Docker内では外部パッケージ `ydlidar_ros2_driver` も `/ws/src` に取得してビルドする。
+YDLidar-SDKとドライバのコミットはDockerfileで固定している。
+`tg30_publisher/` は実行時・ビルド時とも不要。
 
 Docker build 時に `/ws/src` を `colcon build` し、シェル起動時に
 `/ws/install` を読み込む。コード・設定を変更したら
@@ -25,6 +29,7 @@ Docker build 時に `/ws/src` を `colcon build` し、シェル起動時に
 ROS 2 Humble と依存関係がある環境では、このディレクトリで
 `source /opt/ros/humble/setup.bash && colcon build`、
 `source install/setup.bash` によりDockerなしでも使用できる。
+センサ起動には別途、Dockerfileと同じSDK・ドライバの導入が必要。
 
 個別ノードは `ros2 run minicar_scan scan_filter_node` などで起動する。
 FTG・MPPI・safetyの単独起動時は、共有車両諸元を明示する:
@@ -46,17 +51,18 @@ MPPIが障害物判定に使う生の `/scan` は区別する。
 ROS 2通信はDockerのhost networkを使う。TFのpublisherは次の1箇所ずつにする。
 
 ```text
-map ──> odom ──> base_link ──> LiDAR frame
-  SLAM      host側             host側センサ設定
- Toolbox   robot_localization   またはstatic TF
+map ──> odom ──> base_link ──> laser_frame
+  SLAM      host側             コンテナ側
+ Toolbox   robot_localization   static TF
 ```
 
 - Jetsonホスト
   - 既存の`robot_localization`をネイティブ実行する。
   - `/odom`と動的TF `odom -> base_link`をpublishする。
-  - `/scan`、`/imu`と、`base_link -> LiDAR frame`などのセンサTFをpublishする。
+  - `/imu`とIMUのセンサTFをpublishする。
 - Dockerコンテナ
-  - ホストの`/odom`、`/scan`、`/imu`、`/tf`、`/tf_static`をsubscribeする。
+  - TG30から`/scan`をpublishし、`base_link -> laser_frame`の静的TFを配信する。
+  - ホストの`/odom`、`/imu`、`/tf`、`/tf_static`をsubscribeする。
   - SLAM Toolboxを起動したときだけ`map -> odom`をpublishする。
   - `robot_localization`や`odom -> base_link`の変換を起動しない。
 
@@ -87,6 +93,10 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ## 2. Buildと起動
 
 Jetson上でbuildすることで公式`ros:humble`のARM64イメージが選ばれる。
+TG30をUSB接続し、旧`tg30_publisher`とホスト側の同じLiDAR静的TFを停止しておく。
+既定のホストポートは`/dev/ttyUSB0`。異なる場合は、以下の起動前に
+`export LIDAR_DEVICE=/dev/serial/by-id/実際のデバイス名`などで指定する。
+コンテナ内では常に`/dev/ttyUSB0`へマップする。
 
 ```bash
 cd ~/Docker/jetson_humble
@@ -96,8 +106,26 @@ docker compose up -d
 docker compose exec jetson bash
 ```
 
-Composeはbashを待機させるだけで、SLAMやMPPIを自動起動しない。`privileged`や
-デバイスmountも使用しない。
+Composeは同じ`jetson`コンテナ内でTG30と静的TFを自動起動する。
+SLAM・MPPIは手動起動。`privileged`や別のLiDAR/GUIコンテナは使用しない。
+
+```bash
+docker compose logs -f jetson
+docker compose exec jetson ros2 topic hz /scan
+docker compose exec jetson ros2 topic echo /scan --once --qos-reliability best_effort
+docker compose exec jetson ros2 run tf2_ros tf2_echo base_link laser_frame
+```
+
+目安は約10 Hz、`frame_id: laser_frame`、有効な距離データの継続受信。
+TG30の設定は`src/minicar_scan/config/TG30.yaml`、取付TFは同ディレクトリの
+`lidar_tf.yaml`。TFは旧構成のx=0.2 m・回転なしを引き継いだ初期値で、実測値ではない。
+変更後は`docker compose up -d --build`で反映する。
+
+USB未接続ならComposeのデバイス割り当てが失敗する。ポートを開けない場合は
+ドライバのログを確認する。ドライバが終了すると静的TFを含むlaunchも終了し、
+`restart: unless-stopped`により再起動する。USBの再列挙後は
+`docker compose up -d --force-recreate`でデバイスを再割り当てする。
+停止には以下の`down`を使う。
 
 コンテナを止める場合:
 
@@ -115,6 +143,7 @@ dpkg --print-architecture        # arm64
 ros2 pkg prefix slam_toolbox
 ros2 pkg prefix nav2_map_server
 ros2 pkg prefix teleop_twist_keyboard
+ros2 pkg prefix ydlidar_ros2_driver
 python3 -c "import numpy, scipy, yaml"
 
 # 何も表示せず終了コード1なら、Gazeboは入っていない。

@@ -1,0 +1,23 @@
+ydlidar_ros2_driver_node:
+  ros__parameters:
+    port: /dev/ttyUSB0
+    frame_id: laser_frame
+    ignore_array: ""
+    baudrate: 512000        # TG15/TG30/TG50 共通
+    lidar_type: 0           # 0 = TOF (TG シリーズ)
+    device_type: 0          # 0 = serial
+    sample_rate: 20         # TG30: 20 (kHz)
+    abnormal_check_count: 4
+    fixed_resolution: true
+    reversion: true
+    inverted: true
+    auto_reconnect: true
+    isSingleChannel: false
+    intensity: false
+    support_motor_dtr: false
+    angle_max: 180.0
+    angle_min: -180.0
+    range_max: 30.0         # TG30 は 30m モデル
+    range_min: 0.01
+    frequency: 10.0
+    invalid_range_is_inf: false

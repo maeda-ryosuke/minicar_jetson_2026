@@ -1,0 +1,10 @@
+# 旧 tg30_publisher の初期値。実測した取付位置・姿勢へ変更すること。
+# 車両制御用の後輪車軸基準オフセットとは座標原点が異なる。
+parent_frame: base_link
+child_frame: laser_frame
+x: 0.2
+y: 0.0
+z: 0.0
+roll: 0.0
+pitch: 0.0
+yaw: 0.0

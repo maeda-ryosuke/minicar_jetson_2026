@@ -28,9 +28,26 @@ RUN apt-get update && \
         ros-humble-visualization-msgs && \
     rm -rf /var/lib/apt/lists/*
 
+# SDK と humble ドライバをコミット固定で取得する。
+# ros:humble に含まれるビルドツールを明示。既存ROS依存のキャッシュと分離する。
+RUN apt-get install -y --no-install-recommends git cmake build-essential
+ARG YDLIDAR_SDK_COMMIT=01cdda4f2b36dff2a706d0535c64228d863c7411
+ARG YDLIDAR_DRIVER_COMMIT=4ef70d3f32a85704ade0be54b214f3763b1ab3e8
+RUN git init /opt/YDLidar-SDK && \
+    git -C /opt/YDLidar-SDK remote add origin https://github.com/YDLIDAR/YDLidar-SDK.git && \
+    git -C /opt/YDLidar-SDK fetch --depth 1 origin ${YDLIDAR_SDK_COMMIT} && \
+    git -C /opt/YDLidar-SDK checkout --detach FETCH_HEAD && \
+    cmake -S /opt/YDLidar-SDK -B /opt/YDLidar-SDK/build && \
+    cmake --build /opt/YDLidar-SDK/build -j2 && \
+    cmake --install /opt/YDLidar-SDK/build && ldconfig
+
 # docker compose exec の対話シェルでも ROS 2 コマンドをそのまま使えるようにする。
 # 非対話 bash は compose の BASH_ENV で同じ setup.bash を読む。
 WORKDIR /ws
+RUN git init src/ydlidar_ros2_driver && \
+    git -C src/ydlidar_ros2_driver remote add origin https://github.com/YDLIDAR/ydlidar_ros2_driver.git && \
+    git -C src/ydlidar_ros2_driver fetch --depth 1 origin ${YDLIDAR_DRIVER_COMMIT} && \
+    git -C src/ydlidar_ros2_driver checkout --detach FETCH_HEAD
 COPY src /ws/src
 RUN source /opt/ros/humble/setup.bash && colcon build
 COPY docker/ros_setup.bash /etc/minicar/ros_setup.bash
