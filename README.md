@@ -118,7 +118,7 @@ docker compose exec jetson ros2 run tf2_ros tf2_echo base_link laser_frame
 
 目安は約10 Hz、`frame_id: laser_frame`、有効な距離データの継続受信。
 TG30の設定は`src/minicar_scan/config/TG30.yaml`、取付TFは同ディレクトリの
-`lidar_tf.yaml`。TFは旧構成のx=0.2 m・回転なしを引き継いだ初期値で、実測値ではない。
+`lidar_tf.yaml`。現在の設定は`base_link`基準でx=0.332 m、yaw=+78度（反時計回り）。
 変更後は`docker compose up -d --build`で反映する。
 
 USB未接続ならComposeのデバイス割り当てが失敗する。ポートを開けない場合は

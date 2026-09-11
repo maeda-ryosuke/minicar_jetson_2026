@@ -2,6 +2,6 @@ scan_filter_node:
   ros__parameters:
     scan_topic: /scan
     output_topic: /scan_filtered
-    fov_deg: 180.0
+    fov_deg: 360.0
     range_max: 2.0
     max_pitch_deg: 0.0
