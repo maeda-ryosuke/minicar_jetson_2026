@@ -16,7 +16,7 @@ services:
 
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
-      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
       ROS_LOCALHOST_ONLY: ${ROS_LOCALHOST_ONLY:-0}
       # docker compose exec jetson bash -c "..." のような非対話 bash 用。
       BASH_ENV: /etc/minicar/ros_setup.bash
@@ -27,5 +27,44 @@ services:
     # センサとその静的TFのみ自動起動。SLAM・MPPIは手動起動する。
     command: ["ros2", "launch", "minicar_bringup", "sensors.launch.py"]
     restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  # D455 + Isaac ROS cuVSLAMだけを検証する専用サービス。
+  # `docker compose --profile vslam up vslam`で単独起動し、jetsonとは併用しない。
+  vslam:
+    profiles: ["vslam"]
+    image: minicar_vslam:3.2
+    container_name: minicar_vslam
+    network_mode: host
+    ipc: host
+    runtime: nvidia
+
+    volumes:
+      - /dev:/dev
+      - ./src/minicar_realsense/config:/config/minicar_realsense:ro
+
+    device_cgroup_rules:
+      - "c 81:* rmw"
+      - "c 189:* rmw"
+
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      ROS_LOCALHOST_ONLY: ${ROS_LOCALHOST_ONLY:-0}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all
+      BASH_ENV: /etc/minicar_vslam_setup.bash
+
+    command:
+      - bash
+      - -lc
+      - >-
+        minicar-vslam-preflight &&
+        ros2 launch minicar_realsense d455_cuvslam.launch.py
+        realsense_params_file:=/config/minicar_realsense/d455.yaml
+        cuvslam_params_file:=/config/minicar_realsense/cuvslam.yaml
+        mount_params_file:=/config/minicar_realsense/camera_mount.yaml
+    restart: "no"
     stdin_open: true
     tty: true

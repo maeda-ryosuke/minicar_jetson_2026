@@ -6,3 +6,4 @@ maps
 **/*.pyc
 **/.pytest_cache
 **/*.egg-info
+.isaac_ros_common

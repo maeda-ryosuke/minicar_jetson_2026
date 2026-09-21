@@ -1,17 +1,19 @@
 # jetson_humble
 
-Jetson実機上でTG30 LiDAR、ROS 2 Humble、SLAM Toolbox、FTG/MPPIを動かすDocker環境。
+Jetson実機上でTG30 LiDAR、ROS 2 Humble、SLAM Toolbox、FTG/MPPI、
+RealSense D455 + Isaac ROS cuVSLAMを動かすDocker環境。
 Gazebo、RViz2、`robot_localization`はコンテナに含めない。
 
 このディレクトリは自己完結しており、`minicar_gazebo/`を参照しない。
 
 ## パッケージ構成
 
-`src/` 以下は colcon でビルドできる5つの `ament_python` パッケージ。
+`src/` 以下は colcon でビルドできる6つの `ament_python` パッケージ。
 
 | パッケージ | 内容 |
 | --- | --- |
 | `minicar_scan` | TG30起動・設定・静的TF、SLAM用scanフィルタ |
+| `minicar_realsense` | D455、取付静的TF、Isaac ROS cuVSLAMの単体bringup |
 | `minicar_ftg` | FTG目標点生成と設定 |
 | `minicar_mppi` | MPPIノード、ROS非依存コア、設定、オフラインテスト |
 | `minicar_safety` | 指令監視・制限・停止・復帰と設定 |
@@ -46,9 +48,90 @@ MPPIはFTGをimportせず、`PointStamped` トピックで目標点を受け取�
 SLAM用の `/scan_filtered`、FTGの `/ftg/scan_filtered` と
 MPPIが障害物判定に使う生の `/scan` は区別する。
 
-## 構成と責務
+## D455 + Isaac ROS cuVSLAM単体構成
 
-ROS 2通信はDockerのhost networkを使う。TFのpublisherは次の1箇所ずつにする。
+この構成はJetson Linux R36.4.3（JetPack 6.2）、Jetson Orin、ROS 2 Humble、
+Isaac ROS 3.2専用。既存の`jetson`サービスとは別の`vslam` profileで動かす。
+VSLAM確認中は`jetson`、ホスト側`robot_localization`、LiDAR、SLAM Toolbox、Nav2を
+停止し、cuVSLAMだけが`map -> odom -> base_link`をpublishするようにする。
+
+Humble版Isaac ROS 3.2では、現行版の`tracking_mode=1`に相当する設定は
+`num_cameras=2`と`enable_imu_fusion=true`である。入力は次の5トピックへ固定する。
+
+| D455データ | cuVSLAM入力 |
+| --- | --- |
+| 左rectified IR | `/visual_slam/image_0` |
+| 左CameraInfo | `/visual_slam/camera_info_0` |
+| 右rectified IR | `/visual_slam/image_1` |
+| 右CameraInfo | `/visual_slam/camera_info_1` |
+| 統合IMU | `/visual_slam/imu` |
+
+### 1. D455取付TFを設定
+
+`src/minicar_realsense/config/camera_mount.yaml`に、実測した
+`base_link -> camera_link`の並進[m]とroll/pitch/yaw[rad]を設定する。
+測定後に`configured: true`へ変更する。全要素ゼロのidentityや未設定状態では、
+誤った`base_link`オドメトリを防ぐためlaunchがエラー終了する。
+
+### 2. Isaac ROSイメージをビルド
+
+D455を接続するJetson上で実行する。スクリプトはIsaac ROS Common `v3.2-15`を
+`.isaac_ros_common/`へ取得し、公式`ros2_humble.realsense`レイヤーの上に
+`minicar_realsense`とIsaac ROS Visual SLAM 3.2を構築する。
+
+```bash
+cd ~/Docker/jetson_humble
+./scripts/build_vslam_image.bash
+docker image inspect minicar_vslam:3.2 >/dev/null
+```
+
+### 3. VSLAMだけを起動
+
+ホストと同じDDS設定をexportし、D455をUSB 3.xポートへ接続して起動する。
+preflightはaarch64、R36.4.3、6 GB以上のRAM、RealSense ROS 4.51.1、
+librealsense 2.55.1、Isaac ROS 3.2、D455とUSB 3.x接続を検査する。
+
+```bash
+docker compose --profile vslam config
+docker compose --profile vslam up vslam
+```
+
+別端末から入力、出力、TFを確認する。
+
+```bash
+docker compose --profile vslam exec vslam ros2 topic hz /visual_slam/image_0
+docker compose --profile vslam exec vslam ros2 topic hz /visual_slam/image_1
+docker compose --profile vslam exec vslam ros2 topic hz /visual_slam/imu
+docker compose --profile vslam exec vslam ros2 topic hz /visual_slam/tracking/odometry
+docker compose --profile vslam exec vslam ros2 topic echo /visual_slam/status
+docker compose --profile vslam exec vslam ros2 run tf2_ros tf2_echo map odom
+docker compose --profile vslam exec vslam ros2 run tf2_ros tf2_echo odom base_link
+docker compose --profile vslam exec vslam ros2 topic info /tf -v
+```
+
+左右IRは約90 Hz、IMUは約200 Hzが目安。Odometryは`frame_id: odom`、
+`child_frame_id: base_link`でなければならない。`/tf`の詳細表示で、
+`map -> odom`と`odom -> base_link`のpublisherがcuVSLAM以外にも存在する場合は停止する。
+
+同じROS Domainへ接続したRViz2端末で、同梱設定を使用する。
+Jetson上でRVizを常用すると計測へ影響するため、可能なら別PCで表示する。
+
+```bash
+rviz2 -d "$(ros2 pkg prefix --share minicar_realsense)/rviz/d455_cuvslam.rviz"
+```
+
+停止時はVSLAMサービスだけを指定する。
+
+```bash
+docker compose --profile vslam stop vslam
+docker compose --profile vslam rm -f vslam
+```
+
+## 既存TG30構成の責務
+
+以下は`jetson`サービスで従来のTG30 + SLAM Toolboxを使う場合の構成であり、
+上記`vslam`サービスとは同時に起動しない。ROS 2通信はDockerのhost networkを使う。
+TFのpublisherは次の1箇所ずつにする。
 
 ```text
 map ──> odom ──> base_link ──> laser_frame

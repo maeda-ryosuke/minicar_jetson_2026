@@ -1,0 +1,30 @@
+/**:
+  ros__parameters:
+    num_cameras: 2
+    rectified_images: true
+    enable_image_denoising: false
+    enable_imu_fusion: true
+    enable_localization_n_mapping: true
+    map_frame: map
+    odom_frame: odom
+    base_frame: base_link
+    camera_optical_frames:
+      - camera_infra1_optical_frame
+      - camera_infra2_optical_frame
+    imu_frame: camera_gyro_optical_frame
+    publish_odom_to_base_tf: true
+    publish_map_to_odom_tf: true
+    invert_odom_to_base_tf: false
+    invert_map_to_odom_tf: false
+    image_qos: SENSOR_DATA
+    imu_qos: SENSOR_DATA
+    gyro_noise_density: 0.000244
+    gyro_random_walk: 0.000019393
+    accel_noise_density: 0.001862
+    accel_random_walk: 0.003
+    calibration_frequency: 200.0
+    image_jitter_threshold_ms: 22.0
+    imu_jitter_threshold_ms: 10.0
+    enable_slam_visualization: true
+    enable_landmarks_view: true
+    enable_observations_view: true

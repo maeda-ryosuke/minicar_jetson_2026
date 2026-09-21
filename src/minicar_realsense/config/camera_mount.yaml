@@ -1,0 +1,12 @@
+camera_mount:
+  # Measure the rigid transform before the first run, then set this to true.
+  # Translation is metres; roll/pitch/yaw are radians (ROS REP-103 axes).
+  configured: false
+  parent_frame: base_link
+  child_frame: camera_link
+  x: 0.0
+  y: 0.0
+  z: 0.0
+  roll: 0.0
+  pitch: 0.0
+  yaw: 0.0
