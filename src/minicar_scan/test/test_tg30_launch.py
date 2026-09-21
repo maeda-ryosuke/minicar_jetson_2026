@@ -5,17 +5,26 @@ import signal
 import subprocess
 
 from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_packages_with_prefixes
+import pytest
 import yaml
 
 
 def test_driver_failure_stops_static_tf(tmp_path):
+    if 'ydlidar_ros2_driver' not in get_packages_with_prefixes():
+        pytest.skip('ydlidar_ros2_driverはDockerイメージ内でビルドされる')
     config = Path(get_package_share_directory('minicar_scan')) / 'config'
     params = yaml.safe_load((config / 'TG30.yaml').read_text())
     # 必ず存在しないポートを指定し、接続中のセンサを触らない。
     params['ydlidar_ros2_driver_node']['ros__parameters']['port'] = str(tmp_path / 'absent')
     invalid = tmp_path / 'invalid.yaml'
     invalid.write_text(yaml.safe_dump(params))
-    env = dict(os.environ, ROS_LOCALHOST_ONLY='1', ROS_DOMAIN_ID='231')
+    env = dict(
+        os.environ,
+        ROS_LOCALHOST_ONLY='1',
+        ROS_DOMAIN_ID='231',
+        ROS_LOG_DIR=str(tmp_path / 'ros-log'),
+    )
     process = subprocess.Popen(
         ['ros2', 'launch', 'minicar_scan', 'tg30.launch.py', f'params_file:={invalid}'],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,

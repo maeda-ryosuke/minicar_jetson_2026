@@ -33,6 +33,8 @@ slam_toolbox:
     # ---- 動作 ----
     debug_logging: false
     throttle_scans: 1
+    # async_slam_toolbox_node は古いscanを溜めず、常に最新scanを処理する。
+    scan_queue_size: 1
     transform_publish_period: 0.02
     map_update_interval: 1.0    # 地図が 10.5x5.7m と小さいので更新が安い
     resolution: 0.025           # 通路幅 0.82m に対し 0.05 では粗い
@@ -53,7 +55,9 @@ slam_toolbox:
     transform_timeout: 0.2
     tf_buffer_duration: 30.
     stack_size_to_use: 40000000
-    enable_interactive_mode: true
+    # 通常運用ではscanキャッシュとRViz操作を無効化する。地図を手動修正する
+    # ときだけlaunch引数 interactive_mode:=true で上書きする。
+    enable_interactive_mode: false
 
     # ---- スキャンマッチング ----
     use_scan_matching: true

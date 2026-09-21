@@ -106,7 +106,7 @@ docker compose up -d
 docker compose exec jetson bash
 ```
 
-Composeは同じ`jetson`コンテナ内でTG30と静的TFを自動起動する。
+Composeは同じ`jetson`コンテナ内でTG30、静的TF、SLAM用scanフィルタを自動起動する。
 SLAM・MPPIは手動起動。`privileged`や別のLiDAR/GUIコンテナは使用しない。
 
 ```bash
@@ -184,15 +184,40 @@ env | grep -E '^(ROS_DOMAIN_ID|RMW_IMPLEMENTATION|ROS_LOCALHOST_ONLY)='
 
 ホスト側でも同じコマンドを実行し、値を合わせてからComposeを再作成する。
 
-## 5. SLAM
+## 5. SLAMで地図を作る
 
-端末1でSLAMを起動する。
+SLAM Toolboxは`/odom`トピックを自己位置として直接使わず、scanの時刻における
+`odom -> base_link` TFを参照する。最初にホストのEKFとコンテナのセンサを起動し、
+次の入力が揃っていることを確認する。
+
+```bash
+docker compose exec jetson ros2 topic hz /scan_filtered
+docker compose exec jetson ros2 topic echo /scan_filtered --once \
+  --qos-reliability best_effort
+docker compose exec jetson ros2 topic echo /odom --once
+docker compose exec jetson ros2 run tf2_ros tf2_echo odom base_link
+docker compose exec jetson ros2 run tf2_ros tf2_echo base_link laser_frame
+```
+
+`/scan_filtered`は約10 Hzで、scanとodomの`header.stamp`が同じ実時間系であることを
+確認する。`/tf`のpublisherも調べ、`odom -> base_link`を出す
+`robot_localization`が1つだけであることを確認する。
+
+```bash
+docker compose exec jetson ros2 topic info /tf -v
+```
+
+端末1でmappingを起動する。
 
 ```bash
 cd ~/Docker/jetson_humble
 docker compose exec jetson bash -c \
   "ros2 launch minicar_bringup slam_mapping.launch.py"
 ```
+
+通常は`enable_interactive_mode=false`で動作する。RVizからpose graphを手動修正する
+場合に限り、`interactive_mode:=true`を付けて起動する。独自パラメータを試す場合は
+絶対パスを`slam_params_file:=...`へ渡せる。
 
 別端末でTFを確認する。
 
@@ -207,19 +232,65 @@ docker compose exec jetson bash -c \
 `robot_localization`による`odom -> base_link`。後者のpublisherが複数ある場合は
 SLAMを続行せず、重複しているpublisherを停止する。
 
-地図を保存する。
+非常停止できる状態で手動操作し、0.2～0.3 m/s程度でコースを複数周する。
+急旋回、車輪の空転、停止中に車体を持ち上げて移動する操作は避ける。最後は開始地点
+付近まで戻り、ループ閉じ込み後にRViz上で次を確認する。
+
+- 同じ壁が二重に描かれていない。
+- ループ閉じ込み時に地図や`map -> odom`が誤った位置へ飛んでいない。
+- `/scan_filtered`が地図上の壁と重なる。
+
+地図が安定したら、車両を停止したまま同じbasenameで占有地図とpose graphを保存する。
+以下では正本名を`track_v1`とする。
 
 ```bash
 docker compose exec jetson bash -c \
-  "ros2 run nav2_map_server map_saver_cli -f /maps/jetson_map"
+  "ros2 run nav2_map_server map_saver_cli -f /maps/track_v1"
 docker compose exec jetson bash -c \
   "ros2 service call /slam_toolbox/serialize_map \
-   slam_toolbox/srv/SerializePoseGraph \"{filename: '/maps/jetson_map'}\""
+   slam_toolbox/srv/SerializePoseGraph \"{filename: '/maps/track_v1'}\""
+
+ls -lh maps/track_v1.pgm maps/track_v1.yaml \
+  maps/track_v1.posegraph maps/track_v1.data
 ```
 
-成果物はホストの`jetson_humble/maps/`へ保存される。
+成果物はComposeのvolumeを通してホストの`jetson_humble/maps/`へ残る。
+`track_v1.pgm`と`track_v1.yaml`は表示・将来のmap server用、
+`track_v1.posegraph`と`track_v1.data`はSLAM Toolbox Localization用である。
+Localizationの正本は後者2つなので必ず対で保管する。
 
-## 6. キーボード操作
+## 6. 保存した地図で再局在化する
+
+mappingプロセスを停止してからLocalizationを起動する。同時に起動すると双方が
+`map -> odom`をpublishするため禁止する。`posegraph_file`には拡張子を付けない。
+
+```bash
+cd ~/Docker/jetson_humble
+docker compose exec jetson bash -c \
+  "ros2 launch minicar_bringup slam_localization.launch.py \
+   posegraph_file:=/maps/track_v1"
+```
+
+任意位置から開始するときは、同じROS Domainに接続したRVizでFixed Frameを`map`にし、
+地図上のおおよその車両位置と前方向を「2D Pose Estimate」で指定する。この操作は
+`geometry_msgs/msg/PoseWithCovarianceStamped`を`/initialpose`へpublishする。指定後は
+車両を低速で短距離動かし、scan matchingが収束するまで自動制御を開始しない。
+
+```bash
+docker compose exec jetson ros2 topic echo /slam_toolbox/pose
+docker compose exec jetson ros2 run tf2_ros tf2_echo map odom
+docker compose exec jetson ros2 run tf2_ros tf2_echo map base_link
+docker compose exec jetson ros2 topic info /tf -v
+```
+
+RVizでscanと保存地図が重なり、静止中の`map -> base_link`が発散せず、
+`map -> odom`のpublisherがSLAM Toolboxだけであることを確認してから制御系を起動する。
+位置が収束しない場合は走行を開始せず、より正確な`/initialpose`を与え直す。
+
+レースラインCSVは、この確認を終えた固定版pose graphの`map`座標で作成する。地図を
+作り直した場合、同名で安易に上書きせず版を上げ、レースラインも再整合させる。
+
+## 7. キーボード操作
 
 `teleop_twist_keyboard`は`/cmd_vel`を直接publishする。実機走行系がこのトピックを
 受けることと、非常停止手段を確認してから使用する。
@@ -229,7 +300,7 @@ docker compose exec jetson bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
 
-## 7. FTG + MPPI
+## 8. FTG + MPPI
 
 > **警告:** 現在の車両・操舵・速度パラメータはシミュレーション由来の初期値で、
 > 実機校正済みではない。最初にオフラインテストを実行し、その後は車輪を浮かせるか、
