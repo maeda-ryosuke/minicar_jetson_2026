@@ -1,0 +1,48 @@
+# raceline_manager ノードのパラメータ（実機）。
+#
+#   raceline.csv -> [raceline_manager] --FollowPath--> controller_server(MPPI)
+#                                      --/raceline/lap--> (周回数)
+#
+# 先頭キーは **実行時のノード名と一致必須**。ノード名を変えたらここも変える
+# （合っていないと ROS はこのファイルを黙って無視する）。
+
+raceline_manager:
+  ros__parameters:
+    # 参照経路 CSV。列は x, y, yaw の3つ。**座標系は map**。
+    # 既定は空。指定し忘れたら起動時に落とす（別の経路を走らせているつもりで
+    # 既定のファイルを走っていた、に気付けないため）。
+    raceline_file: ""
+
+    # 実機の TF ツリー: map -(slam_toolbox)-> odom -(EKF)-> base_link
+    map_frame: "map"
+    base_frame: "base_link"
+
+    # nav2 の controller_server 側の名前。nav2 のパラメータと揃えること。
+    action_name: "follow_path"
+    controller_id: "FollowPath"
+    goal_checker_id: "general_goal_checker"
+
+    # 現在位置から前方この距離ぶんだけ切り出して送る[m]。
+    #
+    #   lookahead_m > prune_distance >= vx_max * time_steps * model_dt
+    #
+    # vx_max 1.0 / 56 ステップ / 0.05s なら 4.0 > 3.0 >= 2.8 で満たす。
+    # **vx_max を上げたら prune_distance と一緒にここも伸ばすこと。**
+    # 足りないと経路の終点がホライゾンの内側に入り、PathFollowCritic が
+    # 「終点で止まる」軌道を好むようになる。
+    lookahead_m: 4.0
+
+    # FollowPath の再送周期[Hz]。controller_server は新しいゴールで経路を
+    # 差し替えるだけなので、送り直しても制御はリセットされない。
+    feed_rate: 2.0
+
+    # 最近傍の探索窓[m]。全探索は蛇行コースで隣の通路の点へ吸着する。
+    nearest_window: 2.0
+
+    # 経路からこれ以上離れたら最近傍を全探索でやり直す[m]。
+    # 窓だけで探し続けると、window 以上外れた瞬間に進捗が固まって復帰しない。
+    relocalize_distance: 0.80
+
+    # 周長のこの割合まで進んだら次の周回通過を数え始める。
+    # 1.0 ちょうどにすると、始点付近で前後に揺れたときに二重計上する。
+    lap_arm_fraction: 0.9
