@@ -16,7 +16,11 @@ RUN apt-get update && \
         ros-humble-geometry-msgs \
         ros-humble-launch-ros \
         ros-humble-nav-msgs \
+        ros-humble-nav2-controller \
+        ros-humble-nav2-lifecycle-manager \
         ros-humble-nav2-map-server \
+        ros-humble-nav2-mppi-controller \
+        ros-humble-nav2-msgs \
         ros-humble-rclpy \
         ros-humble-rmw-cyclonedds-cpp \
         ros-humble-rmw-fastrtps-cpp \

@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>minicar_nav2</name>
+  <version>0.1.0</version>
+  <description>Nav2 MPPI controller bringup for the minicar</description>
+  <maintainer email="ryosuke@users.noreply.github.com">ryosuke</maintainer>
+  <license>TODO</license>
+  <buildtool_depend>ament_python</buildtool_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>minicar_bringup</exec_depend>
+  <exec_depend>minicar_motor</exec_depend>
+  <exec_depend>minicar_raceline</exec_depend>
+  <exec_depend>minicar_safety</exec_depend>
+  <exec_depend>nav2_controller</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>nav2_mppi_controller</exec_depend>
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>python3-yaml</test_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>

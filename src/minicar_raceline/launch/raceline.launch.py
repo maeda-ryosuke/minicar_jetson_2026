@@ -6,10 +6,10 @@
                                        [safety_node] --/cmd_vel--> [motor_driver] --PWM--> 車両
 
 **この launch は nav2 の controller_server と safety_node を起動しない。**
-前者は minicar_jetson_2026 の Dockerfile にまだ入っていない（jetson_src/README.md
-の「事前に潰すこと」を参照）。後者は minicar_safety が持っている。
-起動する側を 1 箇所にしておかないと、同じノードが二重に上がって
-/cmd_vel の publisher が複数になる。
+Race Line Manager とモータだけを単独確認するための launch である。
+通常走行では controller_server、safety_node と本 launch をまとめて起動する
+`minicar_nav2 raceline_mppi.launch.py` を使う。両方を同時起動すると同じノードが
+二重に上がり、/cmd_vel の publisher が複数になるため併用しない。
 
     ros2 launch minicar_raceline raceline.launch.py \\
       raceline_file:=/maps/raceline.csv

@@ -56,6 +56,23 @@ pip3 install smbus
 
 ## 起動
 
+Nav2 MPPI、safety、Race Line Manager、motor driverを一括起動する通常経路:
+
+```bash
+# 観測のみ。PWMは出ない
+docker compose exec jetson bash -c \
+  "ros2 launch minicar_nav2 raceline_mppi.launch.py \
+   raceline_file:=/maps/raceline.csv"
+
+# 実機PWM（校正とI2C設定を完了し、必ず車輪を浮かせてから）
+docker compose exec jetson bash -c \
+  "ros2 launch minicar_nav2 raceline_mppi.launch.py \
+   raceline_file:=/maps/raceline.csv backend:=fabo_pca9685"
+```
+
+`minicar_raceline`だけのlaunchは、controller serverとsafetyを別途起動する
+デバッグ用途に使う。
+
 ```bash
 # 観測のみ。PWM は出ない
 docker compose exec jetson bash -c \

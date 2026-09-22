@@ -3,7 +3,7 @@
 
     [ftg_node] --/ftg/target_point--> [mppi_node] --/cmd_vel_raw--> [safety_node]
         ^                                 ^   ^
-      /scan                            /scan  /odom
+      /scan                            /scan  /odometry/filtered
 
 最適化本体は mppi_core.py（ROS 非依存）。このファイルは購読・変換・publish
 だけを持つ。safety_node とのインタフェースは Twist 一本なので、
@@ -40,7 +40,7 @@ class MppiNode(Node):
         self.declare_parameter("vehicle_params_file", "")
         self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("target_topic", "/ftg/target_point")
-        self.declare_parameter("odom_topic", "/odom")
+        self.declare_parameter("odom_topic", "/odometry/filtered")
         self.declare_parameter("cmd_topic", "/cmd_vel_raw")
         self.declare_parameter("viz_samples", 30)
         self.declare_parameter("publish_esdf", True)

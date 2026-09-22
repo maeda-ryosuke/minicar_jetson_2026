@@ -56,7 +56,7 @@ class SafetyNode(Node):
         self.declare_parameter("vehicle_params_file", "")
         self.declare_parameter("in_topic", "/cmd_vel_raw")
         self.declare_parameter("out_topic", "/cmd_vel")
-        self.declare_parameter("imu_topic", "/imu")
+        self.declare_parameter("imu_topic", "/imu/data")
 
         vehicle_params_file = self.get_parameter("vehicle_params_file").value
         if not vehicle_params_file:

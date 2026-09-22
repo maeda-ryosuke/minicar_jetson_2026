@@ -18,6 +18,7 @@ import os
 import sys
 
 import numpy as np
+import pytest
 
 from minicar_motor.motor_driver_core import (
     MotorCommand, MotorConfig, MotorDriverCore, as_table, piecewise_linear,
@@ -86,6 +87,20 @@ def load_cfg() -> MotorConfig:
             pwm = json.load(f)
         print(f"  {pwm_path} の校正値で検証する")
     return MotorConfig.from_yaml(vp, motor, pwm)
+
+
+@pytest.fixture(autouse=True)
+def _failure_guard():
+    """各pytestケースを独立させ、既存check()の失敗をpytestへ伝える。"""
+    FAILURES.clear()
+    yield
+    assert not FAILURES, "\n".join(FAILURES)
+
+
+@pytest.fixture
+def core() -> MotorDriverCore:
+    """実際の共有車両諸元とmotor設定から変換コアを作る。"""
+    return MotorDriverCore(load_cfg())
 
 
 # ----------------------------------------------------------------------

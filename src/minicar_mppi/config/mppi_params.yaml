@@ -107,6 +107,6 @@ mppi_node:
 
     scan_topic: "/scan"
     target_topic: "/ftg/target_point"
-    odom_topic: "/odom"
+    odom_topic: "/odometry/filtered"
     cmd_topic: "/cmd_vel_raw"
     # bringup の launch から共有ファイルのパスを渡す。

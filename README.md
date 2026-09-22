@@ -1,6 +1,6 @@
 # jetson_humble
 
-Jetson実機上でTG30 LiDAR、ROS 2 Humble、SLAM Toolbox、FTG/MPPI、
+Jetson実機上でTG30 LiDAR、ROS 2 Humble、SLAM Toolbox、Nav2 MPPI、
 RealSense D455 + Isaac ROS cuVSLAMを動かすDocker環境。
 Gazebo、RViz2、`robot_localization`はコンテナに含めない。
 
@@ -8,7 +8,7 @@ Gazebo、RViz2、`robot_localization`はコンテナに含めない。
 
 ## パッケージ構成
 
-`src/` 以下は colcon でビルドできる6つの `ament_python` パッケージ。
+`src/` 以下は colcon でビルドできる9つの `ament_python` パッケージ。
 
 | パッケージ | 内容 |
 | --- | --- |
@@ -18,6 +18,9 @@ Gazebo、RViz2、`robot_localization`はコンテナに含めない。
 | `minicar_mppi` | MPPIノード、ROS非依存コア、設定、オフラインテスト |
 | `minicar_safety` | 指令監視・制限・停止・復帰と設定 |
 | `minicar_bringup` | 統合launch、SLAM設定、共有車両諸元 |
+| `minicar_nav2` | Nav2 MPPI設定とレースライン走行系の統合launch |
+| `minicar_raceline` | CSVレースライン、FollowPath送信、ラップ管理 |
+| `minicar_motor` | Twistから舵角・速度・PCA9685 PWMへの変換 |
 
 Docker内では外部パッケージ `ydlidar_ros2_driver` も `/ws/src` に取得してビルドする。
 YDLidar-SDKとドライバのコミットはDockerfileで固定している。
@@ -141,11 +144,11 @@ map ──> odom ──> base_link ──> laser_frame
 
 - Jetsonホスト
   - 既存の`robot_localization`をネイティブ実行する。
-  - `/odom`と動的TF `odom -> base_link`をpublishする。
-  - `/imu`とIMUのセンサTFをpublishする。
+  - `/odometry/filtered`と動的TF `odom -> base_link`をpublishする。
+  - `/imu/data`とIMUのセンサTFをpublishする。
 - Dockerコンテナ
   - TG30から`/scan`をpublishし、`base_link -> laser_frame`の静的TFを配信する。
-  - ホストの`/odom`、`/imu`、`/tf`、`/tf_static`をsubscribeする。
+  - ホストの`/odometry/filtered`、`/imu/data`、`/tf`、`/tf_static`をsubscribeする。
   - SLAM Toolboxを起動したときだけ`map -> odom`をpublishする。
   - `robot_localization`や`odom -> base_link`の変換を起動しない。
 
@@ -241,13 +244,13 @@ Jetsonホストで`robot_localization`とセンサノードを起動してから
 ```bash
 ros2 daemon stop
 ros2 topic list
-ros2 topic echo --once /odom
+ros2 topic echo --once /odometry/filtered
 ros2 topic echo --once /tf
 ros2 topic echo /tf_static --qos-durability transient_local --once
 ros2 run tf2_ros tf2_echo odom base_link
 ```
 
-`/odom`が見えても`tf2_echo odom base_link`が失敗する場合、ホスト側
+`/odometry/filtered`が見えても`tf2_echo odom base_link`が失敗する場合、ホスト側
 `robot_localization`の`publish_tf`、`odom_frame`、`base_link_frame`を確認する。
 コンテナ側で`odom -> base_link`を追加して回避するとTFが重複するため行わない。
 
@@ -269,7 +272,7 @@ env | grep -E '^(ROS_DOMAIN_ID|RMW_IMPLEMENTATION|ROS_LOCALHOST_ONLY)='
 
 ## 5. SLAMで地図を作る
 
-SLAM Toolboxは`/odom`トピックを自己位置として直接使わず、scanの時刻における
+SLAM Toolboxは`/odometry/filtered`トピックを自己位置として直接使わず、scanの時刻における
 `odom -> base_link` TFを参照する。最初にホストのEKFとコンテナのセンサを起動し、
 次の入力が揃っていることを確認する。
 
@@ -277,7 +280,7 @@ SLAM Toolboxは`/odom`トピックを自己位置として直接使わず、scan
 docker compose exec jetson ros2 topic hz /scan_filtered
 docker compose exec jetson ros2 topic echo /scan_filtered --once \
   --qos-reliability best_effort
-docker compose exec jetson ros2 topic echo /odom --once
+docker compose exec jetson ros2 topic echo /odometry/filtered --once
 docker compose exec jetson ros2 run tf2_ros tf2_echo odom base_link
 docker compose exec jetson ros2 run tf2_ros tf2_echo base_link laser_frame
 ```
@@ -383,7 +386,44 @@ docker compose exec jetson bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
 
-## 8. FTG + MPPI
+## 8. Nav2 MPPI + Race Line
+
+外部のEKFとSLAM Toolboxを起動し、`/odometry/filtered`と
+`map -> odom -> base_link`が得られることを確認してから起動する。
+既定の`backend:=dryrun`ではPWMを出さず、変換結果だけを確認できる。
+
+```bash
+docker compose exec jetson bash -c \
+  "ros2 launch minicar_nav2 raceline_mppi.launch.py \
+   raceline_file:=/maps/raceline.csv"
+```
+
+車輪を浮かせ、PWMと速度・操舵マップを校正した後だけ実機出力を有効にする。
+
+```bash
+docker compose exec jetson bash -c \
+  "ros2 launch minicar_nav2 raceline_mppi.launch.py \
+   raceline_file:=/maps/raceline.csv backend:=fabo_pca9685"
+```
+
+データフロー:
+
+```text
+Race Line CSV -> raceline_manager --FollowPath--> Nav2 MPPI
+                                                    | /cmd_vel_raw
+/scan, /imu/data -----------------------------> safety_node
+                                                    | /cmd_vel
+                                              motor_driver -> PWM
+
+/odometry/filtered ---------------------------> Nav2 MPPI
+map -> odom -> base_link ----------------------> Nav2 MPPI / raceline_manager
+```
+
+Nav2のローカルCostmapは`odom`座標系の空グリッドで、障害物レイヤと
+Costmap系Criticは無効。障害物回避を追加するときは両方を同時に設定する。
+旧`minicar_bringup mppi.launch.py`とは`/cmd_vel_raw`が競合するため同時起動しない。
+
+## 9. 旧 FTG + 自作MPPI
 
 > **警告:** 現在の車両・操舵・速度パラメータはシミュレーション由来の初期値で、
 > 実機校正済みではない。最初にオフラインテストを実行し、その後は車輪を浮かせるか、
@@ -409,8 +449,8 @@ docker compose exec jetson bash -c \
 ```text
 /scan ──> FTG ──> /ftg/target_point ──> MPPI ──> /cmd_vel_raw
                                                         │
-/scan, /imu ─────────────────────────────────────> safety_node ──> /cmd_vel
-/odom ───────────────────────────────────────────> MPPI
+/scan, /imu/data ────────────────────────────────> safety_node ──> /cmd_vel
+/odometry/filtered ──────────────────────────────> MPPI
 ```
 
 MPPI launchは`robot_localization`やTF publisherを起動しない。

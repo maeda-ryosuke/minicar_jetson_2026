@@ -26,7 +26,7 @@ controller_server は経路の終点を goal_checker でゴール判定し、着
 ゴール判定は発火しない。
 
 前方長の条件: lookahead_m > prune_distance >= vx_max * time_steps * model_dt
-(nav2 の MPPI 設定。vx_max 1.0 / 56 ステップ / 0.05s なら 4.0 > 3.0 >= 2.8)
+(nav2 の MPPI 設定。vx_max 0.5 / 56 ステップ / 0.05s なら 4.0 > 3.0 >= 1.4)
 **vx_max を上げたら lookahead_m と prune_distance も一緒に伸ばすこと。**
 足りないと経路の終点がホライゾンの内側に入り、PathFollowCritic が
 「終点で止まる」軌道を好むようになる。
