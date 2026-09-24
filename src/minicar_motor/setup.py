@@ -22,5 +22,7 @@ setup(
     tests_require=['pytest'],
     entry_points={'console_scripts': [
         'motor_driver_node = minicar_motor.motor_driver_node:main',
+        # 実機ベンチ。PWM 6 点の校正と定量 /cmd_vel。手順は docs/MOTOR_BENCH.md
+        'motor_bench = minicar_motor.motor_bench:main',
     ]},
 )
