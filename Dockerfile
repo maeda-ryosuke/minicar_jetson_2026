@@ -45,6 +45,17 @@ RUN git init /opt/YDLidar-SDK && \
     cmake --build /opt/YDLidar-SDK/build -j2 && \
     cmake --install /opt/YDLidar-SDK/build && ldconfig
 
+# minicar_motor の backend:=fabo_pca9685 用。FaBo の notebooks/98_setting.ipynb と
+# 同じライブラリ。既存の ROS パッケージのレイヤーをキャッシュのまま残すため別の RUN にする。
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        i2c-tools \
+        python3-pip \
+        python3-smbus && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip3 install --no-cache-dir \
+        git+https://github.com/FaBoPlatform/FaBoPWM-PCA9685-Python@jupyterlab
+
 # docker compose exec の対話シェルでも ROS 2 コマンドをそのまま使えるようにする。
 # 非対話 bash は compose の BASH_ENV で同じ setup.bash を読む。
 WORKDIR /ws

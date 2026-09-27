@@ -36,23 +36,12 @@ CSV の列は `x, y, yaw` の3つだけ。単位は m と rad。
 ## 導入
 
 ```bash
-cp -r jetson_src/minicar_raceline jetson_src/minicar_motor \
-      ~/Docker/jetson_humble/src/
 cd ~/Docker/jetson_humble && docker compose up -d --build
 ```
 
-`backend:=fabo_pca9685` で実際に PWM を出す場合のみ、FaBo の
-`notebooks/98_setting.ipynb` と同じライブラリが要る。
-
-```bash
-git clone -b jupyterlab https://github.com/FaBoPlatform/FaBoPWM-PCA9685-Python
-cd FaBoPWM-PCA9685-Python && pip3 install .
-pip3 install smbus
-```
-
-コンテナから I2C を叩くので `docker-compose.yaml` にデバイス割り当ても要る
-（`--device /dev/i2c-7`、または `privileged` と `i2c` グループ）。
-既定の `backend:=dryrun` ならどちらも不要。
+`backend:=fabo_pca9685` 用の FaBo PCA9685 ライブラリと `smbus` は Dockerfile に、
+`/dev/i2c-7` の割り当てと `src/minicar_motor/config` のマウントは
+`docker-compose.yaml` に入っている。PWM の校正手順は `MOTOR_BENCH.md`。
 
 ## 起動
 

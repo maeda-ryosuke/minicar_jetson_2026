@@ -13,6 +13,8 @@ services:
     ipc: host
     devices:
       - "${LIDAR_DEVICE:-/dev/ttyUSB0}:/dev/ttyUSB0"
+      # PCA9685 (FaBo)。Orin Nano の I2C バスは 7。
+      - "${I2C_DEVICE:-/dev/i2c-7}:/dev/i2c-7"
 
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
@@ -23,6 +25,9 @@ services:
 
     volumes:
       - ./maps:/maps:rw
+      # モータ校正値 (pwm_params.json, motor_driver_params.yaml) をホストの src と
+      # 共有する。motor_bench の save がホストへ直接書き戻し、変更はドライバ再起動で反映。
+      - ./src/minicar_motor/config:/ws/install/minicar_motor/share/minicar_motor/config:rw
 
     # センサとその静的TFのみ自動起動。SLAM・MPPIは手動起動する。
     command: ["ros2", "launch", "minicar_bringup", "sensors.launch.py"]
