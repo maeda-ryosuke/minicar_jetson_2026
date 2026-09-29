@@ -39,7 +39,7 @@ def test_slam_launch_files_expose_required_arguments(tmp_path):
         "slam_localization.launch.py": (
             "use_sim_time", "posegraph_file", "slam_params_file"
         ),
-        "sensors.launch.py": ("scan_params_file",),
+        "sensors.launch.py": ("scan_params_file", "enable_camera"),
     }
     env = dict(os.environ, ROS_LOG_DIR=str(tmp_path / "ros-log"))
     for launch_file, arguments in expected.items():

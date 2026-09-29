@@ -12,6 +12,7 @@
   <exec_depend>minicar_scan</exec_depend>
   <exec_depend>minicar_ftg</exec_depend>
   <exec_depend>minicar_mppi</exec_depend>
+  <exec_depend>minicar_realsense</exec_depend>
   <exec_depend>minicar_safety</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
   <test_depend>python3-pytest</test_depend>
