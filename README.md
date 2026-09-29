@@ -1,7 +1,7 @@
 # jetson_humble
 
 Jetson実機上でTG30 LiDAR、ROS 2 Humble、SLAM Toolbox、Nav2 MPPI、
-RealSense D455ドライバを動かすDocker環境(cuVSLAMは別コンテナ`~/Docker/isaac_vslam`)。
+RealSense D455ドライバを動かすDocker環境(cuVSLAMは別コンテナ`~/Docker/minicar_isaac_vslam`)。
 Gazebo、RViz2、`robot_localization`はコンテナに含めない。
 
 このディレクトリは自己完結しており、`minicar_gazebo/`を参照しない。
@@ -54,9 +54,9 @@ MPPIが障害物判定に使う生の `/scan` は区別する。
 ## D455ドライバ
 
 D455のドライバ(`realsense2_camera`)はこの`jetson`コンテナで動かし、
-Isaac ROS cuVSLAMは別リポジトリ`~/Docker/isaac_vslam`のコンテナで動かす。
+Isaac ROS cuVSLAMは別リポジトリ`~/Docker/minicar_isaac_vslam`のコンテナで動かす。
 両者はhost network + host IPCのFast DDS(SHM)で画像とIMUを受け渡す。
-cuVSLAMの手順は`~/Docker/isaac_vslam/README.md`を参照。
+cuVSLAMの手順は`~/Docker/minicar_isaac_vslam/README.md`を参照。
 
 Isaac ROS 3.2のRealSense要件に合わせ、次の組み合わせに固定している。
 
@@ -122,7 +122,7 @@ cuVSLAMの単独検証中は、cuVSLAMが`map -> odom -> base_link`をpublishす
 ## 既存TG30構成の責務
 
 以下は`jetson`サービスで従来のTG30 + SLAM Toolboxを使う場合の構成であり、
-cuVSLAM(`isaac_vslam`)の単独検証とは同時に起動しない。ROS 2通信はDockerのhost networkを使う。
+cuVSLAM(`minicar_isaac_vslam`)の単独検証とは同時に起動しない。ROS 2通信はDockerのhost networkを使う。
 TFのpublisherは次の1箇所ずつにする。
 
 ```text
@@ -165,7 +165,7 @@ Fast DDSとCyclone DDSの両方をインストールしてある。
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ```
 
-ただしD455の画像を`isaac_vslam`コンテナ(Fast DDS)へ渡すときは、両コンテナを
+ただしD455の画像を`minicar_isaac_vslam`コンテナ(Fast DDS)へ渡すときは、両コンテナを
 Fast DDSに揃える。RMWが違うとSHMが使えず、90 Hzのステレオ画像がUDP経由になる。
 
 ## 2. Buildと起動

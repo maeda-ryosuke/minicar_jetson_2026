@@ -26,7 +26,7 @@ def test_d455_stream_configuration_matches_cuvslam_inputs():
 
 
 def test_driver_keeps_realsense_topic_names():
-    # cuVSLAM (isaac_vslam container) subscribes to /camera/infra1/image_rect_raw etc.,
+    # cuVSLAM (minicar_isaac_vslam container) subscribes to /camera/infra1/image_rect_raw etc.,
     # so the driver must run as /camera/camera without remapping its outputs.
     launch = (PACKAGE / 'launch' / 'd455.launch.py').read_text(encoding='utf-8')
     assert "namespace='camera'" in launch
