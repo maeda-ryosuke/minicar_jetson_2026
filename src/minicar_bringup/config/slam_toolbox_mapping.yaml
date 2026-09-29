@@ -39,7 +39,7 @@ slam_toolbox:
     map_update_interval: 1.0    # 地図が 10.5x5.7m と小さいので更新が安い
     resolution: 0.025           # 通路幅 0.82m に対し 0.05 では粗い
     ### 2m: LiDAR は 30m 出るが、壁を越えないと保証できるのは 2m まで
-    max_laser_range: 2.0
+    max_laser_range: 5.0
     # gz の gpu_lidar / 実機 TG30 いずれも下限 0.1m なので明示しておく。
     #
     # 注: これを 0.1 にしても起動時の警告
