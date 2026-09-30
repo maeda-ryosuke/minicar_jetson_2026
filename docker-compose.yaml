@@ -28,6 +28,7 @@ services:
 
     volumes:
       - ./maps:/maps:rw
+      - ./bags:/bags:rw
       - /dev/bus/usb:/dev/bus/usb
 
     # センサとその静的TFのみ自動起動。SLAM・MPPIは手動起動する。

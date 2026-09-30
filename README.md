@@ -29,7 +29,14 @@ YDLidar-SDKとドライバのコミットはDockerfileで固定している。
 Docker build 時に `/ws/src` を `colcon build` し、シェル起動時に
 `/ws/install` を読み込む。コード・設定を変更したら
 `docker compose up -d --build` で再ビルド・コンテナ再作成する。
-地図だけを `/maps` に書き出し、ホストに保持する。
+地図は `/maps`、rosbag は `/bags` に書き出し、ホストに保持する。
+
+rosbag の記録例（ホストの `bags/` に保存される）:
+
+```bash
+docker compose exec jetson bash -c \
+  "ros2 bag record -s mcap -o /bags/\$(date +%Y%m%d_%H%M%S) /scan /tf /tf_static"
+```
 
 ROS 2 Humble と依存関係がある環境では、このディレクトリで
 `source /opt/ros/humble/setup.bash && colcon build`、
