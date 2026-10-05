@@ -60,6 +60,8 @@ services:
       - ./bags:/bags:rw
       # 検証条件ごとの scan_filter / slam_toolbox パラメータ。
       - ./replay_params:/replay_params:rw
+      # SLAMパラメータ一括検証スクリプト(tools/slam_sweep)。
+      - ./tools:/tools:ro
     command: ["sleep", "infinity"]
     stdin_open: true
     tty: true
