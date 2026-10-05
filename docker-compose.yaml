@@ -42,3 +42,24 @@ services:
     restart: unless-stopped
     stdin_open: true
     tty: true
+
+  # センサの無いPCでrosbagを再生してscan_filter・SLAMを検証する。
+  # docker compose --profile replay up -d replay で起動する(README「PCでbag再生」)。
+  replay:
+    image: jetson_humble:latest
+    container_name: jetson_humble_replay
+    profiles: [replay]
+    environment:
+      # 同じLANの実機graphと混ざらないよう、別Domainかつlocalhost限定にする。
+      ROS_DOMAIN_ID: ${REPLAY_ROS_DOMAIN_ID:-42}
+      ROS_LOCALHOST_ONLY: 1
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      BASH_ENV: /etc/minicar/ros_setup.bash
+    volumes:
+      - ./maps:/maps:rw
+      - ./bags:/bags:rw
+      # 検証条件ごとの scan_filter / slam_toolbox パラメータ。
+      - ./replay_params:/replay_params:rw
+    command: ["sleep", "infinity"]
+    stdin_open: true
+    tty: true

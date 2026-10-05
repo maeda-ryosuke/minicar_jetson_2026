@@ -98,6 +98,8 @@ RUN source /opt/ros/humble/setup.bash && \
     colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
 COPY docker/ros_setup.bash /etc/minicar/ros_setup.bash
 COPY docker/entrypoint.bash /etc/minicar/entrypoint.bash
+# ホスト→コンテナのSHM切り分け用(README「ホストのDDS設定を確認」)。
+COPY docker/fastdds_udp_only.xml /etc/minicar/fastdds_udp_only.xml
 RUN echo 'source /etc/minicar/ros_setup.bash' >> /root/.bashrc
 ENV BASH_ENV=/etc/minicar/ros_setup.bash
 

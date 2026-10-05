@@ -31,12 +31,24 @@ Docker build 時に `/ws/src` を `colcon build` し、シェル起動時に
 `docker compose up -d --build` で再ビルド・コンテナ再作成する。
 地図は `/maps`、rosbag は `/bags` に書き出し、ホストに保持する。
 
-rosbag の記録例（ホストの `bags/` に保存される）:
+rosbag の記録例（ホストの `bags/` に保存される）。PCでscan_filterの条件を変えて
+再生できるよう、`/scan_filtered`は記録せず生データだけを残す:
 
 ```bash
 docker compose exec jetson bash -c \
-  "ros2 bag record -s mcap -o /bags/\$(date +%Y%m%d_%H%M%S) /scan /tf /tf_static"
+  "ros2 bag record -s mcap -o /bags/\$(date +%Y%m%d_%H%M%S) \
+   /scan /tf /tf_static /odom /imu /odometry/filtered"
 ```
+
+記録前に、ホスト側のデータがコンテナへ届いていることを確認する。
+届かない場合は「1. ホストのDDS設定を確認」のSHM対策を行う。
+
+```bash
+docker compose exec jetson ros2 topic hz /odometry/filtered
+docker compose exec jetson ros2 run tf2_ros tf2_echo odom base_link
+```
+
+再生手順は「10. PCでbag再生してmappingを検証する」を参照。
 
 ROS 2 Humble と依存関係がある環境では、このディレクトリで
 `source /opt/ros/humble/setup.bash && colcon build`、
@@ -174,6 +186,33 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 ただしD455の画像を`minicar_isaac_vslam`コンテナ(Fast DDS)へ渡すときは、両コンテナを
 Fast DDSに揃える。RMWが違うとSHMが使えず、90 Hzのステレオ画像がUDP経由になる。
+
+### ホストのノードのデータがコンテナに届かない場合(SHMの権限)
+
+ホストとコンテナが同じFast DDSでも、`ros2 topic list`には見えるのに
+`ros2 topic echo`で何も届かないことがある。host network + host IPCのため
+Fast DDSは同一ホストと判定してSHMを使うが、コンテナ(root)が作った受信用SHMに
+ホストの一般ユーザーのプロセスが書き込めず、データが黙って捨てられる。
+micro-ROS Agentの`/imu`、`/odom`や`robot_localization`の`/odometry/filtered`、`/tf`が該当する。
+
+切り分け: コンテナ内で次の2つを比べ、後者だけ届けばこの問題。
+
+```bash
+ros2 topic echo /imu sensor_msgs/msg/Imu
+FASTRTPS_DEFAULT_PROFILES_FILE=/etc/minicar/fastdds_udp_only.xml \
+  ros2 topic echo /imu sensor_msgs/msg/Imu --no-daemon
+```
+
+対策: ホスト側のROS 2ノードだけUDP専用にする。コンテナ同士(cuVSLAM)はroot同士なので
+SHMのまま使える。Jetsonホストの`~/.bashrc`末尾に追記する(パスはcloneした場所に合わせる)。
+
+```bash
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE=$HOME/workspace/workspace_2026/minicar_jetson_2026/docker/fastdds_udp_only.xml
+```
+
+SSHセッションを開き直し、`ros2 daemon stop`の後にmicro-ROS Agent、`robot_localization`を
+再起動する。systemd等で起動する場合は`.bashrc`が読まれないため、`Environment=`にも同じ値を書く。
 
 ## 2. Buildと起動
 
@@ -453,3 +492,53 @@ docker compose exec jetson bash -c \
 ```
 
 MPPI launchは`robot_localization`やTF publisherを起動しない。
+
+## 10. PCでbag再生してmappingを検証する
+
+センサの無いPC(x86_64でも可)で、Jetsonで記録したbagからscan_filterとSLAM Toolboxを
+パラメータを変えて検証する。`replay`サービスは`/dev/ttyUSB0`を要求せず、センサも起動しない。
+実機graphと混ざらないよう、Domain ID `42`(`REPLAY_ROS_DOMAIN_ID`で変更可)かつ
+localhost限定で動く。
+
+```bash
+cd ~/Docker/jetson_humble
+docker compose build
+docker compose --profile replay up -d replay
+```
+
+条件ごとのパラメータは`replay_params/`(コンテナ内`/replay_params`)に置く。
+既定値からコピーして編集する。
+
+```bash
+docker compose exec replay bash -c \
+  'cp $(ros2 pkg prefix --share minicar_scan)/config/scan_filter_params.yaml /replay_params/scan_r3.yaml &&
+   cp $(ros2 pkg prefix --share minicar_bringup)/config/slam_toolbox_mapping.yaml /replay_params/slam_r3.yaml'
+```
+
+端末1でscan_filterとmappingを起動する。条件を変えるたびに起動し直す(地図は引き継がない)。
+
+```bash
+docker compose exec replay ros2 launch minicar_bringup replay_mapping.launch.py \
+  scan_params_file:=/replay_params/scan_r3.yaml \
+  slam_params_file:=/replay_params/slam_r3.yaml
+```
+
+端末2でbagを再生する。`--clock`と`use_sim_time`(launch内で固定)は必ず対で使う。
+`/scan_filtered`入りの古いbagでも混ざらないよう、トピックを明示する。
+
+```bash
+docker compose exec replay ros2 bag play /bags/<bag> --clock \
+  --topics /scan /tf /tf_static /odom /imu /odometry/filtered
+```
+
+再生が終わったら、条件名を付けて保存する。
+
+```bash
+docker compose exec replay ros2 run nav2_map_server map_saver_cli -f /maps/<bag>_r3
+docker compose exec replay ros2 service call /slam_toolbox/serialize_map \
+  slam_toolbox/srv/SerializePoseGraph "{filename: '/maps/<bag>_r3'}"
+```
+
+- scan_filterの`range_max`とslam_toolboxの`max_laser_range`は対で変える。
+- scan_filterの起動ログ`first scan: N -> M beams ...`で、FOVと距離ゲートが効いているか確認できる。
+- 終了は`docker compose --profile replay down`。

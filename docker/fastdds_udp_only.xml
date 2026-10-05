@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Jetsonホストで動くROS 2ノード(micro-ROS Agent, robot_localization等)用。
+  ホスト(一般ユーザー)からコンテナ(root)へのSHM転送は権限で失敗し、
+  discoveryは通るのにデータだけ届かない。ホスト側をUDP専用にして回避する。
+  コンテナ同士(jetson / cuVSLAM, 共にroot)のSHMはそのまま使える。
+  使い方は README「ホストのDDS設定を確認」を参照。
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>udp_only</transport_id>
+      <type>UDPv4</type>
+    </transport_descriptor>
+  </transport_descriptors>
+  <participant profile_name="udp_only_profile" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>udp_only</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+    </rtps>
+  </participant>
+</profiles>
