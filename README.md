@@ -213,7 +213,8 @@ docker compose up -d
 docker compose exec jetson bash
 ```
 
-Composeは同じ`jetson`コンテナ内でTG30、静的TF、SLAM用scanフィルタを自動起動する。
+Composeは同じ`jetson`コンテナ内でTG30(生の`/scan`)と静的TFを自動起動する。
+SLAM用scanフィルタ(`/scan_filtered`)は`slam_mapping.launch.py`/`slam_localization.launch.py`が起動する。
 SLAM・MPPIは手動起動。`privileged`や別のLiDAR/GUIコンテナは使用しない。
 
 ```bash
@@ -298,15 +299,15 @@ SLAM Toolboxは`/odometry/filtered`トピックを自己位置として直接使
 次の入力が揃っていることを確認する。
 
 ```bash
-docker compose exec jetson ros2 topic hz /scan_filtered
-docker compose exec jetson ros2 topic echo /scan_filtered --once \
+docker compose exec jetson ros2 topic hz /scan
+docker compose exec jetson ros2 topic echo /scan --once \
   --qos-reliability best_effort
 docker compose exec jetson ros2 topic echo /odometry/filtered --once
 docker compose exec jetson ros2 run tf2_ros tf2_echo odom base_link
 docker compose exec jetson ros2 run tf2_ros tf2_echo base_link laser_frame
 ```
 
-`/scan_filtered`は約10 Hzで、scanとodomの`header.stamp`が同じ実時間系であることを
+`/scan`は約10 Hzで、scanとodomの`header.stamp`が同じ実時間系であることを
 確認する。`/tf`のpublisherも調べ、`odom -> base_link`を出す
 `robot_localization`が1つだけであることを確認する。
 
@@ -314,13 +315,16 @@ docker compose exec jetson ros2 run tf2_ros tf2_echo base_link laser_frame
 docker compose exec jetson ros2 topic info /tf -v
 ```
 
-端末1でmappingを起動する。
+端末1でmappingを起動する。scanフィルタ(`/scan` -> `/scan_filtered`)も同時に起動する。
 
 ```bash
 cd ~/Docker/jetson_humble
 docker compose exec jetson bash -c \
   "ros2 launch minicar_bringup slam_mapping.launch.py"
 ```
+
+フィルタ条件を変える場合は`scan_params_file:=/absolute/path/file.yaml`を渡す
+(`slam_localization.launch.py`も同じ引数を持つ)。
 
 通常は`enable_interactive_mode=false`で動作する。RVizからpose graphを手動修正する
 場合に限り、`interactive_mode:=true`を付けて起動する。独自パラメータを試す場合は
@@ -479,8 +483,8 @@ MPPI launchは`robot_localization`やTF publisherを起動しない。
 ## 10. 実機でbagを記録する
 
 PCでscan_filterとSLAM Toolboxのパラメータを変えて再生できるよう、フィルタ前の生データと
-オドメトリを記録する。`/scan_filtered`は記録しない(再生時に条件ごとに作り直す)。
-SLAMは起動しなくてよい。
+オドメトリを記録する。scanフィルタはSLAMのlaunch側で起動するため、SLAMを起動しなければ
+`/scan_filtered`は出ない(再生時に条件ごとに作り直す)。
 
 ### 1. ホスト側を起動する
 
@@ -571,15 +575,16 @@ docker compose exec replay bash -c \
    cp $(ros2 pkg prefix --share minicar_bringup)/config/slam_toolbox_mapping.yaml /replay_params/slam_r3.yaml'
 ```
 
-端末1でscan_filterとmappingを起動する。条件を変えるたびに起動し直す(地図は引き継がない)。
+端末1で実機と同じ`slam_mapping.launch.py`を`use_sim_time:=true`で起動する(scanフィルタも
+同時に起動する)。条件を変えるたびに起動し直す(地図は引き継がない)。
 
 ```bash
-docker compose exec replay ros2 launch minicar_bringup replay_mapping.launch.py \
+docker compose exec replay ros2 launch minicar_bringup slam_mapping.launch.py use_sim_time:=true \
   scan_params_file:=/replay_params/scan_r3.yaml \
   slam_params_file:=/replay_params/slam_r3.yaml
 ```
 
-端末2でbagを再生する。`--clock`と`use_sim_time`(launch内で固定)は必ず対で使う。
+端末2でbagを再生する。`--clock`と`use_sim_time:=true`は必ず対で使う。
 `/scan_filtered`入りの古いbagでも混ざらないよう、トピックを明示する。
 
 ```bash

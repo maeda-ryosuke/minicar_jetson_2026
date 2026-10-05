@@ -34,15 +34,14 @@ def test_mapping_and_localization_keep_the_same_frame_contract():
 def test_slam_launch_files_expose_required_arguments(tmp_path):
     expected = {
         "slam_mapping.launch.py": (
-            "use_sim_time", "interactive_mode", "slam_params_file"
+            "use_sim_time", "interactive_mode", "slam_params_file",
+            "scan_params_file",
         ),
         "slam_localization.launch.py": (
-            "use_sim_time", "posegraph_file", "slam_params_file"
+            "use_sim_time", "posegraph_file", "slam_params_file",
+            "scan_params_file",
         ),
-        "sensors.launch.py": ("scan_params_file", "enable_camera"),
-        "replay_mapping.launch.py": (
-            "scan_params_file", "slam_params_file", "interactive_mode"
-        ),
+        "sensors.launch.py": ("enable_camera",),
     }
     env = dict(os.environ, ROS_LOG_DIR=str(tmp_path / "ros-log"))
     for launch_file, arguments in expected.items():
