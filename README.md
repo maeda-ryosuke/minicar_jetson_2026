@@ -522,10 +522,12 @@ docker compose exec jetson ros2 run tf2_ros tf2_echo base_link laser_frame
 車両を開始地点に置いた状態で記録を始め、数秒静止してから走らせる。
 
 ```bash
-docker compose exec jetson bash -c \
-  "ros2 bag record -s mcap -o /bags/\$(date +%Y%m%d_%H%M%S) \
-   /scan /tf /tf_static /odom /imu /odometry/filtered"
+docker compose exec jetson ros2 bag record -a -o /bags/$(date +%Y%m%d_%H%M%S)
 ```
+
+保存先はコンテナ内の`/bags`(ホストの`bags/`)。`./bags`はコンテナ内の`/ws/bags`になり
+ホストに残らない。D455を起動している(`ENABLE_CAMERA=true`)ときは画像でbagが肥大化するため、
+`-x '/camera/.*'`を付けて除外する。
 
 走行は「5. SLAMで地図を作る」と同じ条件にする(0.2～0.3 m/s、複数周、最後は開始地点付近へ
 戻る)。停止して数秒待ってから`Ctrl+C`で記録を終える。`Ctrl+C`で止めないと
