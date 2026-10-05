@@ -31,24 +31,7 @@ Docker build 時に `/ws/src` を `colcon build` し、シェル起動時に
 `docker compose up -d --build` で再ビルド・コンテナ再作成する。
 地図は `/maps`、rosbag は `/bags` に書き出し、ホストに保持する。
 
-rosbag の記録例（ホストの `bags/` に保存される）。PCでscan_filterの条件を変えて
-再生できるよう、`/scan_filtered`は記録せず生データだけを残す:
-
-```bash
-docker compose exec jetson bash -c \
-  "ros2 bag record -s mcap -o /bags/\$(date +%Y%m%d_%H%M%S) \
-   /scan /tf /tf_static /odom /imu /odometry/filtered"
-```
-
-記録前に、ホスト側のデータがコンテナへ届いていることを確認する。
-届かない場合は「1. ホストのDDS設定を確認」のSHM対策を行う。
-
-```bash
-docker compose exec jetson ros2 topic hz /odometry/filtered
-docker compose exec jetson ros2 run tf2_ros tf2_echo odom base_link
-```
-
-再生手順は「10. PCでbag再生してmappingを検証する」を参照。
+実機でのbag記録は「10. 実機でbagを記録する」、PCでの再生は「11. PCでbag再生してmappingを検証する」を参照。
 
 ROS 2 Humble と依存関係がある環境では、このディレクトリで
 `source /opt/ros/humble/setup.bash && colcon build`、
@@ -493,7 +476,80 @@ docker compose exec jetson bash -c \
 
 MPPI launchは`robot_localization`やTF publisherを起動しない。
 
-## 10. PCでbag再生してmappingを検証する
+## 10. 実機でbagを記録する
+
+PCでscan_filterとSLAM Toolboxのパラメータを変えて再生できるよう、フィルタ前の生データと
+オドメトリを記録する。`/scan_filtered`は記録しない(再生時に条件ごとに作り直す)。
+SLAMは起動しなくてよい。
+
+### 1. ホスト側を起動する
+
+初回のみ、「1. ホストのDDS設定を確認」のSHM対策(`FASTRTPS_DEFAULT_PROFILES_FILE`)を
+`~/.bashrc`へ入れておく。入っていないとホスト側のトピックが0件のbagになる。
+
+Jetsonホストで、別々の端末から起動する(デバイス名は環境に合わせる)。
+
+```bash
+echo $FASTRTPS_DEFAULT_PROFILES_FILE   # 空でないこと
+# マイコン(エンコーダ・IMU)
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyACM0
+# EKF(odom -> base_link) と base_link -> imu_link
+ros2 launch kalmanfilter ekf.launch.py
+```
+
+### 2. コンテナでセンサを起動し、入力を確認する
+
+```bash
+cd ~/workspace/workspace_2026/minicar_jetson_2026
+docker compose up -d
+docker compose exec jetson ros2 topic hz /scan
+docker compose exec jetson ros2 topic hz /imu
+docker compose exec jetson ros2 topic hz /odometry/filtered
+docker compose exec jetson ros2 run tf2_ros tf2_echo odom base_link
+docker compose exec jetson ros2 run tf2_ros tf2_echo base_link laser_frame
+```
+
+`/scan`は約10 Hz。`/imu`と`/odometry/filtered`が0 Hz、または`tf2_echo odom base_link`が
+解決しない場合は記録しない。ホスト側で値が出ているのにコンテナで0 Hzなら、SHM対策が
+効いていない(SSHセッションの開き直しとホストノードの再起動を確認する)。
+
+### 3. 記録する
+
+車両を開始地点に置いた状態で記録を始め、数秒静止してから走らせる。
+
+```bash
+docker compose exec jetson bash -c \
+  "ros2 bag record -s mcap -o /bags/\$(date +%Y%m%d_%H%M%S) \
+   /scan /tf /tf_static /odom /imu /odometry/filtered"
+```
+
+走行は「5. SLAMで地図を作る」と同じ条件にする(0.2～0.3 m/s、複数周、最後は開始地点付近へ
+戻る)。停止して数秒待ってから`Ctrl+C`で記録を終える。`Ctrl+C`で止めないと
+metadataが書かれず、再生できないbagになる。
+
+### 4. 記録内容を確認する
+
+```bash
+docker compose exec jetson ros2 bag info /bags/<bag>
+```
+
+`/scan`、`/tf`、`/odometry/filtered`、`/imu`の`Count`が0でないこと。
+`/tf_static`には`base_link -> laser_frame`(コンテナ)と`base_link -> imu_link`(ホスト)が入る。
+1つでも0なら、手順2の確認からやり直す。
+
+### 5. PCへ転送する
+
+bagはホストの`bags/`に保存され、`.gitignore`で除外されているためGitでは運ばない。
+PCから取得する。
+
+```bash
+rsync -av jetson@<jetsonのIP>:~/workspace/workspace_2026/minicar_jetson_2026/bags/<bag> \
+  ~/Docker/jetson_humble/bags/
+```
+
+コンテナ内で作成したファイルはroot所有になる。Jetson側で削除するときは`sudo`が必要。
+
+## 11. PCでbag再生してmappingを検証する
 
 センサの無いPC(x86_64でも可)で、Jetsonで記録したbagからscan_filterとSLAM Toolboxを
 パラメータを変えて検証する。`replay`サービスは`/dev/ttyUSB0`を要求せず、センサも起動しない。
