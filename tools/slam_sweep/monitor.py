@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""sim time 1秒ごとに map->odom / map->base_link / odom->base_link をcsvへ記録する。"""
+"""sim time で一定周期(既定1秒、第2引数で変更)ごとに map->odom / map->base_link / odom->base_link をcsvへ記録する。"""
 import csv
 import math
 import sys
@@ -25,10 +25,11 @@ def main():
     w = csv.writer(out)
     w.writerow(['t', 'mo_x', 'mo_y', 'mo_yaw', 'mb_x', 'mb_y', 'mb_yaw', 'ob_x', 'ob_y', 'ob_yaw'])
     last = [None]
+    period = float(sys.argv[2]) if len(sys.argv) > 2 else 1.0
 
     def tick():
         now = node.get_clock().now().nanoseconds * 1e-9
-        if now == 0 or (last[0] is not None and now - last[0] < 1.0):
+        if now == 0 or (last[0] is not None and now - last[0] < period):
             return
         try:
             row = [now]
@@ -40,7 +41,7 @@ def main():
         w.writerow([f'{v:.4f}' for v in row])
         out.flush()
 
-    node.create_timer(0.1, tick)
+    node.create_timer(min(0.1, period / 2), tick)
     try:
         rclpy.spin(node)
     except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):

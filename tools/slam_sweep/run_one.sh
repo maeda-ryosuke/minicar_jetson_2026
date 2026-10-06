@@ -14,6 +14,9 @@ ros2 bag play "$BAG" --clock --rate 1.0 \
   --topics /scan /tf /tf_static /odom /imu /odometry/filtered > play.log 2>&1
 sleep 3
 ros2 run nav2_map_server map_saver_cli -f "$OUT/map" --ros-args -p use_sim_time:=true > saver.log 2>&1
+# localization用のpose graph(map.posegraph / map.data)も残す。
+ros2 service call /slam_toolbox/serialize_map slam_toolbox/srv/SerializePoseGraph \
+  "{filename: '$OUT/map'}" > serialize.log 2>&1
 kill -INT $MON 2>/dev/null
 kill -INT -- -$LAUNCH 2>/dev/null
 sleep 3
