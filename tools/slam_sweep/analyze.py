@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
+from scipy.spatial import cKDTree
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -80,6 +81,60 @@ def map_metrics(mp, info):
     return {'occupied_cells': int(len(occ)), 'extent_m': [round(w, 2), round(h, 2)]}
 
 
+def crispness(tf, feat, fov=240.0, rmax=2.0, cell=0.025, block=5.0):
+    """全scanを推定姿勢で共通条件の点群に投影し、地図の鮮明度を測る。
+
+    姿勢 = map->odom(1Hz記録を補間) ∘ EKF odom->base_link(scan時刻)。runごとの
+    フィルタ設定に依存しないよう、投影条件(前方fov・rmax以内)は全runで共通にする。
+    cells: 点が入った格子数(少ないほど壁が細い)。
+    cross_nn_mm: 5秒ブロックの偶奇で点群を分け、奇→偶の最近傍距離の中央値
+    (同じ壁を別時刻に見た点がどれだけ重なるか。二重化・傾きで増える)。
+    """
+    st, R, e = feat['scan_t'], feat['ranges'], feat['ekf']
+    ang = feat['angle_min'] + np.arange(R.shape[1]) * feat['angle_inc']
+    use = np.abs(np.degrees(ang)) <= fov / 2
+    ang = ang[use]
+    mo_yaw = np.unwrap(tf['mo_yaw'])
+    keep = (st >= tf['t'][0]) & (st <= tf['t'][-1])
+    pts, blk = [], []
+    ex, ey, eyaw = e[:, 1], e[:, 2], np.unwrap(e[:, 3])
+    lx = 0.332  # base_link -> laser_frame (lidar_tf.yaml)
+    lyaw = -0.0349066
+    for i in np.where(keep)[0]:
+        t = st[i]
+        r = R[i][use]
+        ok = np.isfinite(r) & (r >= 0.1) & (r <= rmax)
+        if not ok.any():
+            continue
+        bx, by, byaw = np.interp(t, e[:, 0], ex), np.interp(t, e[:, 0], ey), np.interp(t, e[:, 0], eyaw)
+        mx, my, myaw = np.interp(t, tf['t'], tf['mo_x']), np.interp(t, tf['t'], tf['mo_y']), np.interp(t, tf['t'], mo_yaw)
+        # map座標の車体姿勢
+        c, s = math.cos(myaw), math.sin(myaw)
+        wx, wy, wyaw = mx + c * bx - s * by, my + s * bx + c * by, myaw + byaw
+        a = ang[ok] + lyaw
+        px, py = lx + r[ok] * np.cos(a), r[ok] * np.sin(a)
+        c, s = math.cos(wyaw), math.sin(wyaw)
+        pts.append(np.c_[wx + c * px - s * py, wy + s * px + c * py])
+        blk.append(np.full(ok.sum(), int((t - st[0]) // block) % 2))
+    P, B = np.concatenate(pts), np.concatenate(blk)
+    T = np.concatenate([np.full(len(p_), t_) for p_, t_ in zip(pts, st[[i for i in np.where(keep)[0]
+                        if (np.isfinite(R[i][use]) & (R[i][use] >= 0.1) & (R[i][use] <= rmax)).any()]])])
+    cells = len(np.unique(np.floor(P / cell).astype(np.int64), axis=0))
+    rng = np.random.default_rng(0)
+    odd = P[B == 1]
+    q = odd[rng.choice(len(odd), min(30000, len(odd)), replace=False)]
+    d, _ = cKDTree(P[B == 0]).query(q)
+    # 継ぎ目: 1周して戻った区間(最後の25秒)の点を、最初の25秒の点群に当てる。
+    # 局所的に揃っていても全体が曲がっていればここが大きくなる。
+    first, last = P[T <= T.min() + 25], P[T >= T.max() - 25]
+    ds, _ = cKDTree(first).query(last, distance_upper_bound=0.5)
+    ds = ds[np.isfinite(ds)]
+    seam = round(float(np.median(ds)) * 1000, 1) if len(ds) > 200 else None
+    return {'cells': int(cells), 'seam_mm': seam, 'seam_overlap': int(len(ds)),
+            'cross_nn_mm': round(float(np.median(d)) * 1000, 2),
+            'cross_nn_p90_mm': round(float(np.percentile(d, 90)) * 1000, 1)}
+
+
 def draw(run, info, tf, collapse_i, out):
     img = Image.open(run / 'map.pgm').convert('RGB')
     H = img.size[1]
@@ -127,6 +182,7 @@ def analyze(run, feat):
         'series': {'t': [round(float(v), 1) for v in t],
                    'yaw_drift_deg': [round(math.degrees(float(v)), 2) for v in drift]},
         **map_metrics(run / 'map.pgm', info),
+        'crisp': crispness(tf, feat),
     }
     if collapse:
         i = collapse[1]
@@ -140,16 +196,21 @@ def analyze(run, feat):
 
 
 def main():
+    import sys
     feat = dict(np.load(SWEEP / 'features.npz'))
     results = []
-    for run in sorted(p for p in SWEEP.iterdir() if (p / 'tf.csv').exists() and (p / 'map.pgm').exists()):
+    only = set(sys.argv[1:])
+    for run in sorted(p for p in SWEEP.iterdir() if (p / 'tf.csv').exists() and (p / 'map.pgm').exists()
+                      and (not only or p.name in only)):
         r = analyze(run, feat)
         results.append(r)
         c = r.get('collapse', {})
         print(f"{r['name']:20s} final yaw {r['final_map_odom'][2]:+7.1f}deg max {r['max_abs_yaw_drift_deg']:6.1f} "
               f"occ {r['occupied_cells']:6d} extent {r['extent_m']}  collapse {c.get('kind','-')} t={c.get('t','-')} "
               f"valid={c.get('valid_beams','-')} front={c.get('front_beams','-')} side={c.get('side_ratio','-')} "
-              f"wz={c.get('wz_deg','-')} gaps={c.get('odom_gaps_2s','-')}")
+              f"wz={c.get('wz_deg','-')} gaps={c.get('odom_gaps_2s','-')}  crisp {r['crisp']}")
+    if only:
+        return
     (SWEEP / 'results.json').write_text(json.dumps(results, ensure_ascii=False, indent=1))
 
 

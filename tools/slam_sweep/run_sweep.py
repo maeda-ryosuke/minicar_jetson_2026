@@ -93,7 +93,9 @@ def main():
     for g in args.groups:
         for c in spec['groups'][g]:
             merged = copy.deepcopy(spec.get('group_defaults', {}).get(g, {}))
+            slam = {**merged.get('slam', {}), **c.get('slam', {})}
             merged.update(c)
+            merged['slam'] = slam
             conds.append(merged)
     conds += [parse_extra(e) for e in args.extra]
     if args.only:
