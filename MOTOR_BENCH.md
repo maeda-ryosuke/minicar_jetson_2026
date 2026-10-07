@@ -29,8 +29,8 @@
 ### 0-1. ビルドと起動（初回とコード更新時のみ）
 
 ```bash
-# Jetson ホストで
-cd ~/Docker/jetson_humble
+# Jetson ホストで、リポジトリのルート（例: ~/workspace/workspace_2026/minicar_jetson_2026）へ移動
+cd <リポジトリのルート>
 git pull
 docker compose up -d --build
 ```
@@ -69,8 +69,8 @@ docker compose exec jetson python3 -c "import Fabo_PCA9685, smbus; print('ok')"
 変数はコンテナ内で定義する（ホストで定義しても `bash -c` の中には届かない）。
 
 ```bash
-# Jetson ホストで
-cd ~/Docker/jetson_humble
+# Jetson ホストで、リポジトリのルートへ移動
+cd <リポジトリのルート>
 docker compose exec jetson bash
 
 # ここからコンテナ内
@@ -196,7 +196,7 @@ ros2 run minicar_motor motor_bench cmd --vehicle-params-file $VP <引数>
 | # | 確認 | 引数 | 正しい動き | 違ったら |
 | --- | --- | --- | --- | --- |
 | a | 中立 | `--v 0.0 --delta 0.0 --duration 3` | 車輪が回らず、舵がまっすぐ | 1-1 の `stop` / `center` をやり直す |
-| b | 舵の向き | `--v 0.3 --sweep 0.3,-0.3 --duration 3` | 1 点目で左、2 点目で右に切れる | `pwm_params.json` の `left` と `right` を入れ替える |
+| b | 舵の向き | `--v 0.3 --sweep 0.2,-0.2 --duration 3` | 1 点目で左、2 点目で右に切れる | `pwm_params.json` の `left` と `right` を入れ替える |
 | c | 前進 | `--v 0.3 --delta 0.0 --duration 3` | 前進方向に回る | `front` と `back` を入れ替える |
 | d | 後退 | `--v -0.3 --delta 0.0 --duration 3` | 後退方向に回る | 下記 |
 
@@ -373,7 +373,7 @@ ros2 run minicar_motor motor_bench cmd --vehicle-params-file $VP \
 
 ## 測った値の置き場所
 
-パスはすべてホスト側（`~/Docker/jetson_humble/`）。
+パスはすべてホスト側で、リポジトリのルートからの相対パス。
 
 | 測ったもの | 書く先 | 反映方法 |
 | --- | --- | --- |

@@ -36,7 +36,8 @@ CSV の列は `x, y, yaw` の3つだけ。単位は m と rad。
 ## 導入
 
 ```bash
-cd ~/Docker/jetson_humble && docker compose up -d --build
+# リポジトリのルート（例: ~/workspace/workspace_2026/minicar_jetson_2026）で
+cd <リポジトリのルート> && docker compose up -d --build
 ```
 
 `backend:=fabo_pca9685` 用の FaBo PCA9685 ライブラリと `smbus` は Dockerfile に、

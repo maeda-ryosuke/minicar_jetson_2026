@@ -83,7 +83,8 @@ D455を接続するJetson上で実行する。スクリプトはIsaac ROS Common
 `minicar_realsense`とIsaac ROS Visual SLAM 3.2を構築する。
 
 ```bash
-cd ~/Docker/jetson_humble
+# リポジトリのルート（例: ~/workspace/workspace_2026/minicar_jetson_2026）で
+cd <リポジトリのルート>
 ./scripts/build_vslam_image.bash
 docker image inspect minicar_vslam:3.2 >/dev/null
 ```
@@ -185,7 +186,7 @@ TG30をUSB接続し、旧`tg30_publisher`とホスト側の同じLiDAR静的TF�
 コンテナ内では常に`/dev/ttyUSB0`へマップする。
 
 ```bash
-cd ~/Docker/jetson_humble
+cd <リポジトリのルート>
 docker compose config
 docker compose build
 docker compose up -d
@@ -296,7 +297,7 @@ docker compose exec jetson ros2 topic info /tf -v
 端末1でmappingを起動する。
 
 ```bash
-cd ~/Docker/jetson_humble
+cd <リポジトリのルート>
 docker compose exec jetson bash -c \
   "ros2 launch minicar_bringup slam_mapping.launch.py"
 ```
@@ -340,7 +341,7 @@ ls -lh maps/track_v1.pgm maps/track_v1.yaml \
   maps/track_v1.posegraph maps/track_v1.data
 ```
 
-成果物はComposeのvolumeを通してホストの`jetson_humble/maps/`へ残る。
+成果物はComposeのvolumeを通してホストのリポジトリ内`maps/`へ残る。
 `track_v1.pgm`と`track_v1.yaml`は表示・将来のmap server用、
 `track_v1.posegraph`と`track_v1.data`はSLAM Toolbox Localization用である。
 Localizationの正本は後者2つなので必ず対で保管する。
@@ -351,7 +352,7 @@ mappingプロセスを停止してからLocalizationを起動する。同時に�
 `map -> odom`をpublishするため禁止する。`posegraph_file`には拡張子を付けない。
 
 ```bash
-cd ~/Docker/jetson_humble
+cd <リポジトリのルート>
 docker compose exec jetson bash -c \
   "ros2 launch minicar_bringup slam_localization.launch.py \
    posegraph_file:=/maps/track_v1"
