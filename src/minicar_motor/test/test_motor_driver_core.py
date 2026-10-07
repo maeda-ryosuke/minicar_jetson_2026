@@ -207,7 +207,8 @@ def test_count_bounds(core: MotorDriverCore) -> None:
     異常値として入力を無視する。最後の砦なので入力を極端に振って確かめる。
     """
     c = core.cfg
-    for kind, lo, mid, hi in (("steer", c.steer_left, c.steer_center, c.steer_right),
+    # lo が u=-1、hi が u=+1。操舵は u=+1 が left (REP-103)
+    for kind, lo, mid, hi in (("steer", c.steer_right, c.steer_center, c.steer_left),
                               ("throttle", c.throttle_back, c.throttle_stop,
                                c.throttle_front)):
         for u in np.linspace(-5.0, 5.0, 401):
@@ -240,14 +241,35 @@ def test_center_not_midpoint() -> None:
     cfg = MotorConfig(steer_left=300, steer_center=410, steer_right=560)
     core = MotorDriverCore(cfg)
     check(core.to_count(0.0, "steer") == 410, "7b. u=0 が実測中立を出していない")
-    check(core.to_count(-1.0, "steer") == 300, "7b. u=-1 が left でない")
-    check(core.to_count(1.0, "steer") == 560, "7b. u=+1 が right でない")
+    check(core.to_count(1.0, "steer") == 300, "7b. u=+1 が left でない")
+    check(core.to_count(-1.0, "steer") == 560, "7b. u=-1 が right でない")
     # 2 点線形なら u=0 で 430 になる。そうなっていないことを明示しておく。
     check(core.to_count(0.0, "steer") != 430,
           "7b. 2 点線形の中点になっている (FaBo の map_rc と同じ挙動)")
     # 片側だけ見れば傾きは端点まで線形
-    check(core.to_count(0.5, "steer") == 485, "7b. 右半分の線形が合わない")
-    check(core.to_count(-0.5, "steer") == 355, "7b. 左半分の線形が合わない")
+    check(core.to_count(-0.5, "steer") == 485, "7b. 右半分の線形が合わない")
+    check(core.to_count(0.5, "steer") == 355, "7b. 左半分の線形が合わない")
+
+
+def test_steer_direction() -> None:
+    """7d. 左旋回の指令 (omega>0) で left 側のカウントへ動く。
+
+    REP-103 では delta>0 が左。to_count が u=+1 を right に割り当てていた
+    ため、実機で「左を指令して右へ切れる」不具合が出た。その回帰テスト。
+    left < right と left > right (極性反転) の両方で確かめる。
+    """
+    for left, right in ((310, 440), (440, 310)):
+        cfg = MotorConfig(steer_left=left, steer_center=390, steer_right=right)
+        core = MotorDriverCore(cfg)
+        L = cfg.wheelbase
+        for v in (0.5, 1.0):
+            omega = v * math.tan(0.2) / L       # delta=+0.2rad の左旋回
+            n_left = core.to_count(core.convert(v, omega).u_steer, "steer")
+            n_right = core.to_count(core.convert(v, -omega).u_steer, "steer")
+            check(abs(n_left - left) < abs(390 - left),
+                  f"7d. 左旋回で left={left} 側へ動かない: {n_left}")
+            check(abs(n_right - right) < abs(390 - right),
+                  f"7d. 右旋回で right={right} 側へ動かない: {n_right}")
 
 
 def test_reversed_polarity() -> None:
@@ -259,7 +281,7 @@ def test_reversed_polarity() -> None:
     """
     cfg = MotorConfig(steer_left=510, steer_center=410, steer_right=310)
     core = MotorDriverCore(cfg)
-    for u, expect in ((-1.0, 510), (0.0, 410), (1.0, 310)):
+    for u, expect in ((1.0, 510), (0.0, 410), (-1.0, 310)):
         check(core.to_count(u, "steer") == expect,
               f"7c. 極性反転で u={u} が {expect} でない")
 
@@ -372,6 +394,7 @@ def main() -> int:
         ("7. PWM カウントの範囲と端点", lambda: test_count_bounds(core)),
         ("7b. 実測中立を使う (FaBo の map_rc との差分)", test_center_not_midpoint),
         ("7c. 極性反転の校正値", test_reversed_polarity),
+        ("7d. 舵の向き (左旋回で left 側)", test_steer_direction),
         ("8. 実設定の全域スイープ", lambda: test_full_sweep(core)),
         ("9. 設定の矛盾検出", test_config_validation),
         ("10. PWM バックエンド", lambda: test_backend(core)),

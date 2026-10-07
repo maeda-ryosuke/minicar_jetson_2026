@@ -320,8 +320,12 @@ class MotorDriverCore:
     def to_count(self, u: float, kind: str) -> int:
         """正規化指令 -> PCA9685 の 12bit カウント。kind は "steer" / "throttle"。
 
-        **3 点区分線形**にしてある。u=-1 が left/back、u=0 が center/stop、
-        u=+1 が right/front。
+        **3 点区分線形**にしてある。u=0 が center/stop、操舵は u=+1 が left、
+        u=-1 が right、スロットルは u=+1 が front、u=-1 が back。
+
+        操舵の符号は REP-103 に合わせる (delta>0 = omega>0 = 左旋回)。
+        steer_map は delta と u を同符号で並べるので、u=+1 が right だと
+        左を指令して右へ切れる (実機で確認済みの不具合)。
 
         === FaBo の map_rc との意図的な差分 ===
 
@@ -346,8 +350,8 @@ class MotorDriverCore:
             u = NEUTRAL_U
         u = float(np.clip(u, -1.0, 1.0))
         if kind == "steer":
-            lo, mid, hi = (self.cfg.steer_left, self.cfg.steer_center,
-                           self.cfg.steer_right)
+            lo, mid, hi = (self.cfg.steer_right, self.cfg.steer_center,
+                           self.cfg.steer_left)
         elif kind == "throttle":
             lo, mid, hi = (self.cfg.throttle_back, self.cfg.throttle_stop,
                            self.cfg.throttle_front)
