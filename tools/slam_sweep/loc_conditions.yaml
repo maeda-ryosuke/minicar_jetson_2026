@@ -41,6 +41,8 @@ conditions:
   - {name: L34_trust_loop1_t05, base_from_map: true, base_map: MAP_G4, slam: {distance_variance_penalty: 0.03, angle_variance_penalty: 0.03, do_loop_closing: true, loop_match_minimum_chain_size: 25, loop_match_minimum_response_coarse: 0.5, loop_match_minimum_response_fine: 0.6, loop_search_space_dimension: 1.0, minimum_travel_distance: 0.5}}
   - {name: L35_trust_loopmid, base_from_map: true, base_map: MAP_G4, slam: {distance_variance_penalty: 0.03, angle_variance_penalty: 0.03, do_loop_closing: true, loop_search_space_dimension: 1.0}}
   - {name: L36_trust_loop1_far, base_from_map: true, base_map: MAP_G4, slam: {distance_variance_penalty: 0.03, angle_variance_penalty: 0.03, do_loop_closing: true, loop_match_minimum_chain_size: 25, loop_match_minimum_response_coarse: 0.5, loop_match_minimum_response_fine: 0.6, loop_search_space_dimension: 1.0, loop_search_maximum_distance: 2.5}}
+  # リポジトリの slam_toolbox_localization.yaml をそのまま使う(回帰確認用)
+  - {name: L40_repo_default}
 # bagごとの開始姿勢(MAP_G4の地図座標)。最初の40秒をEKFでつないで地図と照合して求めた。
 bags:
   # 最初の25秒をEKFでつないだscanの地図一致率が最大になるよう微調整した値。

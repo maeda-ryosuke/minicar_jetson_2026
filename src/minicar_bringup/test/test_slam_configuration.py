@@ -55,3 +55,13 @@ def test_slam_launch_files_expose_required_arguments(tmp_path):
         )
         for argument in arguments:
             assert argument in result.stdout, result.stdout
+
+
+def test_localization_scan_filter_matches_laser_range():
+    share = Path(get_package_share_directory("minicar_bringup")) / "config"
+    scan = yaml.safe_load((share / "scan_filter_localization.yaml").read_text())
+    scan = scan["scan_filter_node"]["ros__parameters"]
+    localization = _params("slam_toolbox_localization.yaml")
+    assert scan["output_topic"] == localization["scan_topic"]
+    assert scan["range_max"] == localization["max_laser_range"]
+    assert len(localization["map_start_pose"]) == 3

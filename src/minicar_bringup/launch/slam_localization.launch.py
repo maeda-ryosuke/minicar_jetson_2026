@@ -11,7 +11,6 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     bringup_config = Path(get_package_share_directory("minicar_bringup")) / "config"
-    scan_config = Path(get_package_share_directory("minicar_scan")) / "config"
     clock = {
         "use_sim_time": ParameterValue(
             LaunchConfiguration("use_sim_time"), value_type=bool
@@ -27,7 +26,7 @@ def generate_launch_description():
         DeclareLaunchArgument("posegraph_file", default_value="/maps/track_v1"),
         DeclareLaunchArgument(
             "scan_params_file",
-            default_value=str(scan_config / "scan_filter_params.yaml"),
+            default_value=str(bringup_config / "scan_filter_localization.yaml"),
         ),
         DeclareLaunchArgument(
             "slam_params_file",
