@@ -55,11 +55,11 @@ controller_server:
       vx_std: 0.20
       vy_std: 0.0
       wz_std: 0.20
-      vx_max: 0.50
+      vx_max: 1.0
       vx_min: 0.0
       vy_max: 0.0
       # 実際の旋回は AckermannConstraints(|wz| <= vx / min_turning_r)で決まる。
-      wz_max: 1.5
+      wz_max: 2.41
       ax_max: 2.0
       ax_min: -2.0
       ay_max: 0.0
@@ -85,7 +85,7 @@ controller_server:
       # (0.257 / tan(0.2516) = 1.0)にしておく(test_nav2_configuration.py が確認)。
       # 注意: 1.0 m だとレースライン(最小曲率半径 0.58 m)の急コーナーは曲がれない。
       AckermannConstraints:
-        min_turning_r: 1.0
+        min_turning_r: 0.83
 
       # 初期構成では経路追従だけを評価する。CostCritic と
       # ObstaclesCritic は Costmap の障害物レイヤ追加時に同時に有効化する。
