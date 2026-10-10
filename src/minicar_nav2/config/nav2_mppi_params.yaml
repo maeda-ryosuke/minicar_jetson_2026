@@ -1,11 +1,22 @@
 # レースライン追従専用の Nav2 controller_server 設定。
 # planner_server / BT navigator / global costmap は使わず、minicar_raceline が
-# FollowPath action を直接送る。障害物回避を追加するまでは Costmap layer と
-# Cost/Obstacles critic を有効にしない。
+# FollowPath action を直接送る。障害物回避はしない(空のコストマップ、
+# Cost/Obstacles critic 無し)で、map 座標のレースラインにひたすら追従する。
+#
+# MPPI の値は minicar_gazebo の掃引(43 ケース、2026-10-08)の推奨 K3。
+#   * time_steps 40 x model_dt 0.1 = 予測 4.0 s
+#   * PathAlignCritic cost_weight 30 / offset_from_furthest 5
+# シムでの横偏差 RMS は 11.9 cm(旋回制約だけ緩めた基準)-> 4.9 cm。
+# 以下のコメントの cm の値はいずれも min_turning_r 0.45 で測ったもの。
 
 controller_server:
   ros__parameters:
     use_sim_time: false
+    # model_dt(0.1)と一致させない。Humble の MPPI は 1/controller_frequency ==
+    # model_dt のときだけ「制御列シフト」を ON にし、制御列の 2 番目(1 ステップ先)
+    # を指令として出す。シムではシフト OFF の方が精度が良かった
+    # (model_dt 0.05 のまま 20Hz->25Hz でシフトを切ると 11.9 -> 6.3 cm)。
+    # 起動時に「Controller period is less then model dt」の WARN が出るが意図どおり。
     controller_frequency: 20.0
     odom_topic: /odometry/filtered
     failure_tolerance: 0.3
@@ -32,9 +43,14 @@ controller_server:
     FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
 
-      # 20 Hz、2.8 s horizon。0.5 m/s なら予測距離は約1.4 m。
-      time_steps: 56
-      model_dt: 0.05
+      # 予測 4.0 s。0.5 m/s なら予測距離は約 2.0 m(< prune_distance 3.0
+      # < raceline の lookahead_m 4.0)。急コーナーの出口まで見える長さが要る
+      # (1.4 s では逸脱した)。dt 0.1 は同じ wz_std でも 1 つのノイズが 0.1 s
+      # 続くので候補軌道が広く散らばり、急コーナーを曲がる候補が出やすい。
+      # vx_max を上げるときは prune_distance >= vx_max * 4.0 と lookahead_m も伸ばす
+      # (シムでは vx_max 1.0 / wz_max 2.2 / prune 4.5 / lookahead 5.5 で 4.1 cm)。
+      time_steps: 40
+      model_dt: 0.1
       batch_size: 1000
       iteration_count: 1
       vx_std: 0.20
@@ -43,7 +59,8 @@ controller_server:
       vx_max: 0.50
       vx_min: 0.0
       vy_max: 0.0
-      wz_max: 0.50
+      # 実際の旋回は AckermannConstraints(|wz| <= vx / min_turning_r)で決まる。
+      wz_max: 1.5
       ax_max: 2.0
       ax_min: -2.0
       ay_max: 0.0
@@ -63,6 +80,11 @@ controller_server:
         trajectory_step: 5
         time_step: 3
 
+      # 車両の舵角は minicar_bringup の vehicle_params.yaml が唯一の出所。
+      # raceline_mppi.launch.py が wheelbase / tan(delta_max) を計算してこの値を
+      # 上書きする。ここの値は launch を通さず起動したときの既定で、同じ式の値
+      # (0.257 / tan(0.2516) = 1.0)にしておく(test_nav2_configuration.py が確認)。
+      # 注意: 1.0 m だとレースライン(最小曲率半径 0.58 m)の急コーナーは曲がれない。
       AckermannConstraints:
         min_turning_r: 1.0
 
@@ -100,11 +122,14 @@ controller_server:
       PathAlignCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 14.0
+        # 「経路の上に乗れ」。精度の主役。14 -> 30 で 11.9 -> 10.5 cm。
+        cost_weight: 30.0
         max_path_occupancy_ratio: 0.05
         trajectory_point_step: 4
         threshold_to_consider: 0.5
-        offset_from_furthest: 20
+        # 候補軌道がこの点数(経路は 0.05 m 間隔)より先へ届いてから効かせる。
+        # 20(1 m)-> 5(0.25 m)で予測の早い段階から効き、11.9 -> 9.2 cm。
+        offset_from_furthest: 5
         use_path_orientations: true
       PathFollowCritic:
         enabled: true
@@ -121,8 +146,16 @@ controller_server:
         max_angle_to_furthest: 1.0
         forward_preference: true
 
-# controller_server は Costmap2DROS を必ず所有するため、レイヤ無しの空グリッドを
-# odom 座標系で起動する。MPPIがmapのPathをここへ変換するためにも必要。
+# controller_server は Costmap2DROS を必ず所有するため、空のグリッドを odom 座標系で
+# 起動する。MPPI が map の Path をここへ変換するためにも必要。
+#
+# Humble の注意(どちらも controller_server が起動時に abort する。実測):
+#   * plugins: [] / filters: [] のような空リストは rclcpp が型を決められず
+#     「No parameter value set」になる。filters は書かない(既定が空)。plugins は
+#     書かないと static/obstacle/inflation の 3 層が既定で入るので、障害物の
+#     入力源を持たない inflation_layer を 1 つだけ置く(何も膨らまないのでグリッド
+#     は常に空)。
+#   * width / height は int 型。8.0 と書くと「invalid type」になる。
 local_costmap:
   local_costmap:
     ros__parameters:
@@ -130,8 +163,8 @@ local_costmap:
       global_frame: odom
       robot_base_frame: base_link
       rolling_window: true
-      width: 8.0
-      height: 8.0
+      width: 8
+      height: 8
       resolution: 0.05
       update_frequency: 10.0
       publish_frequency: 2.0
@@ -139,8 +172,10 @@ local_costmap:
       robot_radius: 0.12
       track_unknown_space: false
       always_send_full_costmap: false
-      plugins: []
-      filters: []
+      plugins: ["inflation_layer"]
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.15
 
 lifecycle_manager_nav2_mppi:
   ros__parameters:
