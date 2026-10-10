@@ -1,7 +1,7 @@
 # jetson_humble
 
 Jetson実機上でTG30 LiDAR、ROS 2 Humble、SLAM Toolbox、Nav2 MPPI、
-RealSense D455 + Isaac ROS cuVSLAMを動かすDocker環境。
+RealSense D455ドライバを動かすDocker環境(cuVSLAMは別コンテナ`~/Docker/minicar_isaac_vslam`)。
 Gazebo、RViz2、`robot_localization`はコンテナに含めない。
 
 このディレクトリは自己完結しており、`minicar_gazebo/`を参照しない。
@@ -13,7 +13,7 @@ Gazebo、RViz2、`robot_localization`はコンテナに含めない。
 | パッケージ | 内容 |
 | --- | --- |
 | `minicar_scan` | TG30起動・設定・静的TF、SLAM用scanフィルタ |
-| `minicar_realsense` | D455、取付静的TF、Isaac ROS cuVSLAMの単体bringup |
+| `minicar_realsense` | D455ドライバと取付静的TF |
 | `minicar_ftg` | FTG目標点生成と設定 |
 | `minicar_mppi` | MPPIノード、ROS非依存コア、設定、オフラインテスト |
 | `minicar_safety` | 指令監視・制限・停止・復帰と設定 |
@@ -29,7 +29,9 @@ YDLidar-SDKとドライバのコミットはDockerfileで固定している。
 Docker build 時に `/ws/src` を `colcon build` し、シェル起動時に
 `/ws/install` を読み込む。コード・設定を変更したら
 `docker compose up -d --build` で再ビルド・コンテナ再作成する。
-地図だけを `/maps` に書き出し、ホストに保持する。
+地図は `/maps`、rosbag は `/bags` に書き出し、ホストに保持する。
+
+実機でのbag記録は「10. 実機でbagを記録する」、PCでの再生は「11. PCでbag再生してmappingを検証する」を参照。
 
 ROS 2 Humble と依存関係がある環境では、このディレクトリで
 `source /opt/ros/humble/setup.bash && colcon build`、
@@ -51,40 +53,42 @@ MPPIはFTGをimportせず、`PointStamped` トピックで目標点を受け取�
 SLAM用の `/scan_filtered`、FTGの `/ftg/scan_filtered` と
 MPPIが障害物判定に使う生の `/scan` は区別する。
 
-## D455 + Isaac ROS cuVSLAM単体構成
+## D455ドライバ
 
-この構成はJetson Linux R36.4.3（JetPack 6.2）、Jetson Orin、ROS 2 Humble、
-Isaac ROS 3.2専用。既存の`jetson`サービスとは別の`vslam` profileで動かす。
-VSLAM確認中は`jetson`、ホスト側`robot_localization`、LiDAR、SLAM Toolbox、Nav2を
-停止し、cuVSLAMだけが`map -> odom -> base_link`をpublishするようにする。
+D455のドライバ(`realsense2_camera`)はこの`jetson`コンテナで動かし、
+Isaac ROS cuVSLAMは別リポジトリ`~/Docker/minicar_isaac_vslam`のコンテナで動かす。
+両者はhost network + host IPCのFast DDS(SHM)で画像とIMUを受け渡す。
+cuVSLAMの手順は`~/Docker/minicar_isaac_vslam/README.md`を参照。
 
-Humble版Isaac ROS 3.2では、現行版の`tracking_mode=1`に相当する設定は
-`num_cameras=2`と`enable_imu_fusion=true`である。入力は次の5トピックへ固定する。
+Isaac ROS 3.2のRealSense要件に合わせ、次の組み合わせに固定している。
 
-| D455データ | cuVSLAM入力 |
+| 項目 | バージョン |
 | --- | --- |
-| 左rectified IR | `/visual_slam/image_0` |
-| 左CameraInfo | `/visual_slam/camera_info_0` |
-| 右rectified IR | `/visual_slam/image_1` |
-| 右CameraInfo | `/visual_slam/camera_info_1` |
-| 統合IMU | `/visual_slam/imu` |
+| D455ファームウェア | 5.13.0.50 |
+| librealsense (RSUSB backend, CUDAなし) | 2.55.1 |
+| realsense-ros | 4.51.1-isaac (`NVIDIA-ISAAC-ROS/realsense-ros`) |
+
+publishするトピックはrealsense-rosの名前のまま(remapしない)。
+
+| トピック | 内容 |
+| --- | --- |
+| `/camera/infra1/image_rect_raw`, `/camera/infra1/camera_info` | 左IR 640x360 90 Hz |
+| `/camera/infra2/image_rect_raw`, `/camera/infra2/camera_info` | 右IR 640x360 90 Hz |
+| `/camera/imu` | gyro/accel統合 200 Hz |
 
 ### 1. D455取付TFを設定
 
 `src/minicar_realsense/config/camera_mount.yaml`に、実測した
 `base_link -> camera_link`の並進[m]とroll/pitch/yaw[rad]を設定する。
-測定後に`configured: true`へ変更する。全要素ゼロのidentityや未設定状態では、
-誤った`base_link`オドメトリを防ぐためlaunchがエラー終了する。
+測定後に`configured: true`へ変更して再buildする。全要素ゼロのidentityや
+未設定状態では、誤った`base_link`オドメトリを防ぐためlaunchがエラー終了する。
 
-### 2. Isaac ROSイメージをビルド
+### 2. 接続とファームウェアを確認
 
-D455を接続するJetson上で実行する。スクリプトはIsaac ROS Common `v3.2-15`を
-`.isaac_ros_common/`へ取得し、公式`ros2_humble.realsense`レイヤーの上に
-`minicar_realsense`とIsaac ROS Visual SLAM 3.2を構築する。
+D455をUSB 3.xポートへ接続し、デバイスとファームウェアを確認する。
 
 ```bash
-# リポジトリのルート（例: ~/workspace/workspace_2026/minicar_jetson_2026）で
-cd <リポジトリのルート>
+cd ~/Docker/jetson_humble
 ./scripts/build_vslam_image.bash
 docker image inspect minicar_vslam:3.2 >/dev/null
 ```
@@ -96,45 +100,36 @@ preflightはaarch64、R36.4.3、6 GB以上のRAM、RealSense ROS 4.51.1、
 librealsense 2.55.1、Isaac ROS 3.2、D455とUSB 3.x接続を検査する。
 
 ```bash
-docker compose --profile vslam config
-docker compose --profile vslam up vslam
+docker compose exec jetson rs-fw-update -f /maps/Signed_Image_UVC_5_13_0_50.bin
 ```
 
-別端末から入力、出力、TFを確認する。
+公式推奨に従い、ホストのカーネル受信バッファを増やしておく。
 
 ```bash
-docker compose --profile vslam exec vslam ros2 topic hz /visual_slam/image_0
-docker compose --profile vslam exec vslam ros2 topic hz /visual_slam/image_1
-docker compose --profile vslam exec vslam ros2 topic hz /visual_slam/imu
-docker compose --profile vslam exec vslam ros2 topic hz /visual_slam/tracking/odometry
-docker compose --profile vslam exec vslam ros2 topic echo /visual_slam/status
-docker compose --profile vslam exec vslam ros2 run tf2_ros tf2_echo map odom
-docker compose --profile vslam exec vslam ros2 run tf2_ros tf2_echo odom base_link
-docker compose --profile vslam exec vslam ros2 topic info /tf -v
+sudo sysctl -w net.core.rmem_max=2147483647 net.core.rmem_default=2147483647
 ```
 
-左右IRは約90 Hz、IMUは約200 Hzが目安。Odometryは`frame_id: odom`、
-`child_frame_id: base_link`でなければならない。`/tf`の詳細表示で、
-`map -> odom`と`odom -> base_link`のpublisherがcuVSLAM以外にも存在する場合は停止する。
+### 3. D455を起動
 
-同じROS Domainへ接続したRViz2端末で、同梱設定を使用する。
-Jetson上でRVizを常用すると計測へ影響するため、可能なら別PCで表示する。
+`ENABLE_CAMERA=true`のときだけ`sensors.launch.py`がD455を含めて起動する。
+既定は`false`で、D455未接続でも従来どおりLiDAR系だけが起動する。
 
 ```bash
-rviz2 -d "$(ros2 pkg prefix --share minicar_realsense)/rviz/d455_cuvslam.rviz"
+ENABLE_CAMERA=true docker compose up -d jetson
+docker compose exec jetson ros2 topic hz /camera/infra1/image_rect_raw
+docker compose exec jetson ros2 topic hz /camera/imu
+docker compose exec jetson ros2 run tf2_ros tf2_echo base_link camera_infra1_optical_frame
 ```
 
-停止時はVSLAMサービスだけを指定する。
+左右IRは約90 Hz、IMUは約200 Hzが目安。
 
-```bash
-docker compose --profile vslam stop vslam
-docker compose --profile vslam rm -f vslam
-```
+cuVSLAMの単独検証中は、cuVSLAMが`map -> odom -> base_link`をpublishする。
+ホスト側`robot_localization`とSLAM Toolbox、Nav2は停止しておく。
 
 ## 既存TG30構成の責務
 
 以下は`jetson`サービスで従来のTG30 + SLAM Toolboxを使う場合の構成であり、
-上記`vslam`サービスとは同時に起動しない。ROS 2通信はDockerのhost networkを使う。
+cuVSLAM(`minicar_isaac_vslam`)の単独検証とは同時に起動しない。ROS 2通信はDockerのhost networkを使う。
 TFのpublisherは次の1箇所ずつにする。
 
 ```text
@@ -177,6 +172,36 @@ Fast DDSとCyclone DDSの両方をインストールしてある。
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ```
 
+ただしD455の画像を`minicar_isaac_vslam`コンテナ(Fast DDS)へ渡すときは、両コンテナを
+Fast DDSに揃える。RMWが違うとSHMが使えず、90 Hzのステレオ画像がUDP経由になる。
+
+### ホストのノードのデータがコンテナに届かない場合(SHMの権限)
+
+ホストとコンテナが同じFast DDSでも、`ros2 topic list`には見えるのに
+`ros2 topic echo`で何も届かないことがある。host network + host IPCのため
+Fast DDSは同一ホストと判定してSHMを使うが、コンテナ(root)が作った受信用SHMに
+ホストの一般ユーザーのプロセスが書き込めず、データが黙って捨てられる。
+micro-ROS Agentの`/imu`、`/odom`や`robot_localization`の`/odometry/filtered`、`/tf`が該当する。
+
+切り分け: コンテナ内で次の2つを比べ、後者だけ届けばこの問題。
+
+```bash
+ros2 topic echo /imu sensor_msgs/msg/Imu
+FASTRTPS_DEFAULT_PROFILES_FILE=/etc/minicar/fastdds_udp_only.xml \
+  ros2 topic echo /imu sensor_msgs/msg/Imu --no-daemon
+```
+
+対策: ホスト側のROS 2ノードだけUDP専用にする。コンテナ同士(cuVSLAM)はroot同士なので
+SHMのまま使える。Jetsonホストの`~/.bashrc`末尾に追記する(パスはcloneした場所に合わせる)。
+
+```bash
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export FASTRTPS_DEFAULT_PROFILES_FILE=$HOME/workspace/workspace_2026/minicar_jetson_2026/docker/fastdds_udp_only.xml
+```
+
+SSHセッションを開き直し、`ros2 daemon stop`の後にmicro-ROS Agent、`robot_localization`を
+再起動する。systemd等で起動する場合は`.bashrc`が読まれないため、`Environment=`にも同じ値を書く。
+
 ## 2. Buildと起動
 
 Jetson上でbuildすることで公式`ros:humble`のARM64イメージが選ばれる。
@@ -193,7 +218,8 @@ docker compose up -d
 docker compose exec jetson bash
 ```
 
-Composeは同じ`jetson`コンテナ内でTG30、静的TF、SLAM用scanフィルタを自動起動する。
+Composeは同じ`jetson`コンテナ内でTG30(生の`/scan`)と静的TFを自動起動する。
+SLAM用scanフィルタ(`/scan_filtered`)は`slam_mapping.launch.py`/`slam_localization.launch.py`が起動する。
 SLAM・MPPIは手動起動。`privileged`や別のLiDAR/GUIコンテナは使用しない。
 
 ```bash
@@ -278,15 +304,15 @@ SLAM Toolboxは`/odometry/filtered`トピックを自己位置として直接使
 次の入力が揃っていることを確認する。
 
 ```bash
-docker compose exec jetson ros2 topic hz /scan_filtered
-docker compose exec jetson ros2 topic echo /scan_filtered --once \
+docker compose exec jetson ros2 topic hz /scan
+docker compose exec jetson ros2 topic echo /scan --once \
   --qos-reliability best_effort
 docker compose exec jetson ros2 topic echo /odometry/filtered --once
 docker compose exec jetson ros2 run tf2_ros tf2_echo odom base_link
 docker compose exec jetson ros2 run tf2_ros tf2_echo base_link laser_frame
 ```
 
-`/scan_filtered`は約10 Hzで、scanとodomの`header.stamp`が同じ実時間系であることを
+`/scan`は約10 Hzで、scanとodomの`header.stamp`が同じ実時間系であることを
 確認する。`/tf`のpublisherも調べ、`odom -> base_link`を出す
 `robot_localization`が1つだけであることを確認する。
 
@@ -294,13 +320,16 @@ docker compose exec jetson ros2 run tf2_ros tf2_echo base_link laser_frame
 docker compose exec jetson ros2 topic info /tf -v
 ```
 
-端末1でmappingを起動する。
+端末1でmappingを起動する。scanフィルタ(`/scan` -> `/scan_filtered`)も同時に起動する。
 
 ```bash
 cd <リポジトリのルート>
 docker compose exec jetson bash -c \
   "ros2 launch minicar_bringup slam_mapping.launch.py"
 ```
+
+フィルタ条件を変える場合は`scan_params_file:=/absolute/path/file.yaml`を渡す
+(`slam_localization.launch.py`も同じ引数を持つ)。
 
 通常は`enable_interactive_mode=false`で動作する。RVizからpose graphを手動修正する
 場合に限り、`interactive_mode:=true`を付けて起動する。独自パラメータを試す場合は
@@ -455,3 +484,129 @@ docker compose exec jetson bash -c \
 ```
 
 MPPI launchは`robot_localization`やTF publisherを起動しない。
+
+## 10. 実機でbagを記録する
+
+PCでscan_filterとSLAM Toolboxのパラメータを変えて再生できるよう、フィルタ前の生データと
+オドメトリを記録する。scanフィルタはSLAMのlaunch側で起動するため、SLAMを起動しなければ
+`/scan_filtered`は出ない(再生時に条件ごとに作り直す)。
+
+### 1. ホスト側を起動する
+
+初回のみ、「1. ホストのDDS設定を確認」のSHM対策(`FASTRTPS_DEFAULT_PROFILES_FILE`)を
+`~/.bashrc`へ入れておく。入っていないとホスト側のトピックが0件のbagになる。
+
+Jetsonホストで、別々の端末から起動する(デバイス名は環境に合わせる)。
+
+```bash
+echo $FASTRTPS_DEFAULT_PROFILES_FILE   # 空でないこと
+# マイコン(エンコーダ・IMU)
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyACM0
+# EKF(odom -> base_link) と base_link -> imu_link
+ros2 launch kalmanfilter ekf.launch.py
+```
+
+### 2. コンテナでセンサを起動し、入力を確認する
+
+```bash
+cd ~/workspace/workspace_2026/minicar_jetson_2026
+docker compose up -d
+docker compose exec jetson ros2 topic hz /scan
+docker compose exec jetson ros2 topic hz /imu
+docker compose exec jetson ros2 topic hz /odometry/filtered
+docker compose exec jetson ros2 run tf2_ros tf2_echo odom base_link
+docker compose exec jetson ros2 run tf2_ros tf2_echo base_link laser_frame
+```
+
+`/scan`は約10 Hz。`/imu`と`/odometry/filtered`が0 Hz、または`tf2_echo odom base_link`が
+解決しない場合は記録しない。ホスト側で値が出ているのにコンテナで0 Hzなら、SHM対策が
+効いていない(SSHセッションの開き直しとホストノードの再起動を確認する)。
+
+### 3. 記録する
+
+車両を開始地点に置いた状態で記録を始め、数秒静止してから走らせる。
+
+```bash
+docker compose exec jetson ros2 bag record -a -o /bags/$(date +%Y%m%d_%H%M%S)
+```
+
+保存先はコンテナ内の`/bags`(ホストの`bags/`)。`./bags`はコンテナ内の`/ws/bags`になり
+ホストに残らない。D455を起動している(`ENABLE_CAMERA=true`)ときは画像でbagが肥大化するため、
+`-x '/camera/.*'`を付けて除外する。
+
+走行は「5. SLAMで地図を作る」と同じ条件にする(0.2～0.3 m/s、複数周、最後は開始地点付近へ
+戻る)。停止して数秒待ってから`Ctrl+C`で記録を終える。`Ctrl+C`で止めないと
+metadataが書かれず、再生できないbagになる。
+
+### 4. 記録内容を確認する
+
+```bash
+docker compose exec jetson ros2 bag info /bags/<bag>
+```
+
+`/scan`、`/tf`、`/odometry/filtered`、`/imu`の`Count`が0でないこと。
+`/tf_static`には`base_link -> laser_frame`(コンテナ)と`base_link -> imu_link`(ホスト)が入る。
+1つでも0なら、手順2の確認からやり直す。
+
+### 5. PCへ転送する
+
+bagはホストの`bags/`に保存され、`.gitignore`で除外されているためGitでは運ばない。
+PCから取得する。
+
+```bash
+rsync -av jetson@<jetsonのIP>:~/workspace/workspace_2026/minicar_jetson_2026/bags/<bag> \
+  ~/Docker/jetson_humble/bags/
+```
+
+コンテナ内で作成したファイルはroot所有になる。Jetson側で削除するときは`sudo`が必要。
+
+## 11. PCでbag再生してmappingを検証する
+
+センサの無いPC(x86_64でも可)で、Jetsonで記録したbagからscan_filterとSLAM Toolboxを
+パラメータを変えて検証する。`replay`サービスは`/dev/ttyUSB0`を要求せず、センサも起動しない。
+実機graphと混ざらないよう、Domain ID `42`(`REPLAY_ROS_DOMAIN_ID`で変更可)かつ
+localhost限定で動く。
+
+```bash
+cd ~/Docker/jetson_humble
+docker compose build
+docker compose --profile replay up -d replay
+```
+
+条件ごとのパラメータは`replay_params/`(コンテナ内`/replay_params`)に置く。
+既定値からコピーして編集する。
+
+```bash
+docker compose exec replay bash -c \
+  'cp $(ros2 pkg prefix --share minicar_scan)/config/scan_filter_params.yaml /replay_params/scan_r3.yaml &&
+   cp $(ros2 pkg prefix --share minicar_bringup)/config/slam_toolbox_mapping.yaml /replay_params/slam_r3.yaml'
+```
+
+端末1で実機と同じ`slam_mapping.launch.py`を`use_sim_time:=true`で起動する(scanフィルタも
+同時に起動する)。条件を変えるたびに起動し直す(地図は引き継がない)。
+
+```bash
+docker compose exec replay ros2 launch minicar_bringup slam_mapping.launch.py use_sim_time:=true \
+  scan_params_file:=/replay_params/scan_r3.yaml \
+  slam_params_file:=/replay_params/slam_r3.yaml
+```
+
+端末2でbagを再生する。`--clock`と`use_sim_time:=true`は必ず対で使う。
+`/scan_filtered`入りの古いbagでも混ざらないよう、トピックを明示する。
+
+```bash
+docker compose exec replay ros2 bag play /bags/<bag> --clock \
+  --topics /scan /tf /tf_static /odom /imu /odometry/filtered
+```
+
+再生が終わったら、条件名を付けて保存する。
+
+```bash
+docker compose exec replay ros2 run nav2_map_server map_saver_cli -f /maps/<bag>_r3
+docker compose exec replay ros2 service call /slam_toolbox/serialize_map \
+  slam_toolbox/srv/SerializePoseGraph "{filename: '/maps/<bag>_r3'}"
+```
+
+- scan_filterの`range_max`とslam_toolboxの`max_laser_range`は対で変える。
+- scan_filterの起動ログ`first scan: N -> M beams ...`で、FOVと距離ゲートが効いているか確認できる。
+- 終了は`docker compose --profile replay down`。

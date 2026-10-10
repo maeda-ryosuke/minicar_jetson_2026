@@ -1,0 +1,52 @@
+# localization検証の条件定義。loc_sweep.py が読む。
+# 基準: src/minicar_bringup/config/slam_toolbox_localization.yaml をそのまま使い、
+# scan_filterは地図作成時(MAP_G4)と同じ前方240deg・2mにそろえる。
+# fov / range: scan_filter と max_laser_range / slam: localization yaml への上書き
+conditions:
+  - {name: L00_default}
+  - {name: L01_trust01,   slam: {distance_variance_penalty: 0.1, angle_variance_penalty: 0.1, minimum_distance_penalty: 0.3, minimum_angle_penalty: 0.5}}
+  - {name: L02_trust003,  slam: {distance_variance_penalty: 0.03, angle_variance_penalty: 0.03, minimum_distance_penalty: 0.3, minimum_angle_penalty: 0.5}}
+  - {name: L03_travel005, slam: {minimum_travel_distance: 0.05}}
+  - {name: L04_travel03,  slam: {minimum_travel_distance: 0.3}}
+  - {name: L05_heading01, slam: {minimum_travel_heading: 0.1}}
+  - {name: L06_buf10,     slam: {scan_buffer_size: 10}}
+  - {name: L07_buf40,     slam: {scan_buffer_size: 40}}
+  - {name: L08_resp_low,  slam: {loop_match_minimum_response_coarse: 0.25, loop_match_minimum_response_fine: 0.35}}
+  - {name: L09_resp_high, slam: {loop_match_minimum_response_coarse: 0.5, loop_match_minimum_response_fine: 0.6}}
+  - {name: L10_chain5,    slam: {loop_match_minimum_chain_size: 5}}
+  - {name: L11_chain25,   slam: {loop_match_minimum_chain_size: 25}}
+  - {name: L12_loopdist08, slam: {loop_search_maximum_distance: 0.8}}
+  - {name: L13_loopdist3,  slam: {loop_search_maximum_distance: 3.0}}
+  - {name: L14_r15, range: 1.5}
+  - {name: L15_r3,  range: 3}
+  - {name: L16_fov270, fov: 270}
+  - {name: L17_noloop, slam: {do_loop_closing: false}}
+  # 地図作成時(MAP_*)のパラメータをそのままlocalizationに使う
+  - {name: L20_mapparams_loop,   base_from_map: true, slam: {do_loop_closing: true}}
+  - {name: L21_mapparams_noloop, base_from_map: true, slam: {do_loop_closing: false}}
+  # 第2段: L21(地図作成時の設定・ループなし)を基準に1軸ずつ
+  - {name: L22_travel01,   base_from_map: true, slam: {do_loop_closing: false, minimum_travel_distance: 0.1}}
+  - {name: L23_penalty_default, base_from_map: true, slam: {do_loop_closing: false, distance_variance_penalty: 0.5, angle_variance_penalty: 1.0, minimum_distance_penalty: 0.5, minimum_angle_penalty: 0.9}}
+  - {name: L24_trust003,   base_from_map: true, slam: {do_loop_closing: false, distance_variance_penalty: 0.03, angle_variance_penalty: 0.03}}
+  - {name: L25_loop_strict, base_from_map: true, slam: {do_loop_closing: true, loop_match_minimum_chain_size: 25, loop_match_minimum_response_coarse: 0.5, loop_match_minimum_response_fine: 0.6, loop_search_space_dimension: 1.0}}
+  - {name: L26_r3,         base_from_map: true, range: 3, slam: {do_loop_closing: false}}
+  - {name: L27_buf10,      base_from_map: true, slam: {do_loop_closing: false, scan_buffer_size: 10}}
+  - {name: L28_heading01,  base_from_map: true, slam: {do_loop_closing: false, minimum_travel_heading: 0.1}}
+  - {name: L29_travel05,   base_from_map: true, slam: {do_loop_closing: false, minimum_travel_distance: 0.5}}
+  - {name: L30_search05,   base_from_map: true, slam: {do_loop_closing: false, correlation_search_space_dimension: 0.5}}
+  # 第3段: オドメトリを強く信用し、ループ閉じ込みを「復帰手段」として厳しめに使う
+  - {name: L31_trust_loop1,   base_from_map: true, base_map: MAP_G4, slam: {distance_variance_penalty: 0.03, angle_variance_penalty: 0.03, do_loop_closing: true, loop_match_minimum_chain_size: 25, loop_match_minimum_response_coarse: 0.5, loop_match_minimum_response_fine: 0.6, loop_search_space_dimension: 1.0}}
+  - {name: L32_trust_loop2,   base_from_map: true, base_map: MAP_G4, slam: {distance_variance_penalty: 0.03, angle_variance_penalty: 0.03, do_loop_closing: true, loop_match_minimum_chain_size: 25, loop_match_minimum_response_coarse: 0.5, loop_match_minimum_response_fine: 0.6, loop_search_space_dimension: 2.0}}
+  - {name: L33_trust_loop1_r3, base_from_map: true, base_map: MAP_G4, range: 3, slam: {distance_variance_penalty: 0.03, angle_variance_penalty: 0.03, do_loop_closing: true, loop_match_minimum_chain_size: 25, loop_match_minimum_response_coarse: 0.5, loop_match_minimum_response_fine: 0.6, loop_search_space_dimension: 1.0}}
+  - {name: L34_trust_loop1_t05, base_from_map: true, base_map: MAP_G4, slam: {distance_variance_penalty: 0.03, angle_variance_penalty: 0.03, do_loop_closing: true, loop_match_minimum_chain_size: 25, loop_match_minimum_response_coarse: 0.5, loop_match_minimum_response_fine: 0.6, loop_search_space_dimension: 1.0, minimum_travel_distance: 0.5}}
+  - {name: L35_trust_loopmid, base_from_map: true, base_map: MAP_G4, slam: {distance_variance_penalty: 0.03, angle_variance_penalty: 0.03, do_loop_closing: true, loop_search_space_dimension: 1.0}}
+  - {name: L36_trust_loop1_far, base_from_map: true, base_map: MAP_G4, slam: {distance_variance_penalty: 0.03, angle_variance_penalty: 0.03, do_loop_closing: true, loop_match_minimum_chain_size: 25, loop_match_minimum_response_coarse: 0.5, loop_match_minimum_response_fine: 0.6, loop_search_space_dimension: 1.0, loop_search_maximum_distance: 2.5}}
+  # リポジトリの slam_toolbox_localization.yaml をそのまま使う(回帰確認用)
+  - {name: L40_repo_default}
+# bagごとの開始姿勢(MAP_G4の地図座標)。最初の40秒をEKFでつないで地図と照合して求めた。
+bags:
+  # 最初の25秒をEKFでつないだscanの地図一致率が最大になるよう微調整した値。
+  slow: {path: /bags/20261006_localization_slow, start: [-0.09, 0.02, -0.0122]}
+  fast: {path: /bags/20261006_localization_fast, start: [-0.08, -0.05, -0.0105]}
+  # 地図を作ったのと同じbag(健全性確認用)
+  d1005: {path: /bags/bags/202610052106, start: [0.0, 0.0, 0.0]}

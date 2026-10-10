@@ -13,63 +13,61 @@ services:
     ipc: host
     devices:
       - "${LIDAR_DEVICE:-/dev/ttyUSB0}:/dev/ttyUSB0"
-      # PCA9685 (FaBo)。Orin Nano の I2C バスは 7。
+    # PCA9685 (FaBo)。Orin Nano の I2C バスは 7。
       - "${I2C_DEVICE:-/dev/i2c-7}:/dev/i2c-7"
+    # D455 (librealsense RSUSB backend) は libusb で /dev/bus/usb を直接開く。
+    # 抜き差しや rs-fw-update 時の再列挙に追従できるよう devices ではなく bind する。
+    device_cgroup_rules:
+      - "c 189:* rmw"
+
 
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
-      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+      # 別コンテナの Isaac ROS cuVSLAM と同じ Fast DDS に揃え、SHM で画像を渡す。
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
       ROS_LOCALHOST_ONLY: ${ROS_LOCALHOST_ONLY:-0}
       # docker compose exec jetson bash -c "..." のような非対話 bash 用。
       BASH_ENV: /etc/minicar/ros_setup.bash
 
     volumes:
       - ./maps:/maps:rw
+      - ./bags:/bags:rw
+      - /dev/bus/usb:/dev/bus/usb
       # モータ校正値 (pwm_params.json, motor_driver_params.yaml) をホストの src と
       # 共有する。motor_bench の save がホストへ直接書き戻し、変更はドライバ再起動で反映。
       - ./src/minicar_motor/config:/ws/install/minicar_motor/share/minicar_motor/config:rw
 
     # センサとその静的TFのみ自動起動。SLAM・MPPIは手動起動する。
-    command: ["ros2", "launch", "minicar_bringup", "sensors.launch.py"]
+    # D455 は ENABLE_CAMERA=true のときだけ起動する(camera_mount.yaml の実測設定が必要)。
+    command:
+      - ros2
+      - launch
+      - minicar_bringup
+      - sensors.launch.py
+      - enable_camera:=${ENABLE_CAMERA:-false}
     restart: unless-stopped
     stdin_open: true
     tty: true
 
-  # D455 + Isaac ROS cuVSLAMだけを検証する専用サービス。
-  # `docker compose --profile vslam up vslam`で単独起動し、jetsonとは併用しない。
-  vslam:
-    profiles: ["vslam"]
-    image: minicar_vslam:3.2
-    container_name: minicar_vslam
-    network_mode: host
-    ipc: host
-    runtime: nvidia
-
-    volumes:
-      - /dev:/dev
-      - ./src/minicar_realsense/config:/config/minicar_realsense:ro
-
-    device_cgroup_rules:
-      - "c 81:* rmw"
-      - "c 189:* rmw"
-
+  # センサの無いPCでrosbagを再生してscan_filter・SLAMを検証する。
+  # docker compose --profile replay up -d replay で起動する(README「PCでbag再生」)。
+  replay:
+    image: jetson_humble:latest
+    container_name: jetson_humble_replay
+    profiles: [replay]
     environment:
-      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      # 同じLANの実機graphと混ざらないよう、別Domainかつlocalhost限定にする。
+      ROS_DOMAIN_ID: ${REPLAY_ROS_DOMAIN_ID:-42}
+      ROS_LOCALHOST_ONLY: 1
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
-      ROS_LOCALHOST_ONLY: ${ROS_LOCALHOST_ONLY:-0}
-      NVIDIA_VISIBLE_DEVICES: all
-      NVIDIA_DRIVER_CAPABILITIES: all
-      BASH_ENV: /etc/minicar_vslam_setup.bash
-
-    command:
-      - bash
-      - -lc
-      - >-
-        minicar-vslam-preflight &&
-        ros2 launch minicar_realsense d455_cuvslam.launch.py
-        realsense_params_file:=/config/minicar_realsense/d455.yaml
-        cuvslam_params_file:=/config/minicar_realsense/cuvslam.yaml
-        mount_params_file:=/config/minicar_realsense/camera_mount.yaml
-    restart: "no"
+      BASH_ENV: /etc/minicar/ros_setup.bash
+    volumes:
+      - ./maps:/maps:rw
+      - ./bags:/bags:rw
+      # 検証条件ごとの scan_filter / slam_toolbox パラメータ。
+      - ./replay_params:/replay_params:rw
+      # SLAMパラメータ一括検証スクリプト(tools/slam_sweep)。
+      - ./tools:/tools:ro
+    command: ["sleep", "infinity"]
     stdin_open: true
     tty: true

@@ -1,0 +1,10 @@
+# localization用のscanフィルタ設定。地図(track_v1)を作成したときと同じ前方240deg・2 m。
+# 後方は車体が映るため使わない。range_maxは slam_toolbox_localization.yaml の
+# max_laser_range とそろえる。
+scan_filter_node:
+  ros__parameters:
+    scan_topic: /scan
+    output_topic: /scan_filtered
+    fov_deg: 240.0
+    range_max: 2.0
+    max_pitch_deg: 0.0

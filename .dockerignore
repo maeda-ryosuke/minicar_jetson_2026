@@ -2,6 +2,7 @@ build
 install
 log
 maps
+bags
 **/__pycache__
 **/*.pyc
 **/.pytest_cache

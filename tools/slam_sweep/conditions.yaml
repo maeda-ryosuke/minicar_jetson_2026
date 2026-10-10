@@ -1,0 +1,89 @@
+# SLAM検証の条件定義。run_sweep.py が読む。
+# fov: scan_filterのfov_deg / range: scan_filterのrange_max[m] ("inf"=30m)
+#      / range: best は --best-range で置き換える
+# scale: trueなら距離比例パラメータをrangeに合わせて引き直す(falseは既定yamlのまま)
+# loop: do_loop_closing / slam: slam_toolbox_mapping.yaml への上書き
+groups:
+  A:  # 基準
+    - {name: A0_default,      fov: 270, range: 5, scale: false, loop: true}
+    - {name: A1_noloop,       fov: 270, range: 5, scale: false, loop: false}
+  B:  # スキャン範囲(前方240deg)
+    - {name: B_r1,   fov: 240, range: 1}
+    - {name: B_r2,   fov: 240, range: 2}
+    - {name: B_r3,   fov: 240, range: 3}
+    - {name: B_r4,   fov: 240, range: 4}
+    - {name: B_r5,   fov: 240, range: 5}
+    - {name: B_rinf, fov: 240, range: inf}
+  C:  # スキャンマッチング(1パラメータずつ)
+    - {name: C_travel005,  slam: {minimum_travel_distance: 0.05}}
+    - {name: C_travel020,  slam: {minimum_travel_distance: 0.2}}
+    - {name: C_travel050,  slam: {minimum_travel_distance: 0.5}}
+    - {name: C_heading01,  slam: {minimum_travel_heading: 0.1}}
+    - {name: C_heading05,  slam: {minimum_travel_heading: 0.5}}
+    - {name: C_search05,   slam: {correlation_search_space_dimension: 0.5}}
+    - {name: C_search10,   slam: {correlation_search_space_dimension: 1.0}}
+    - {name: C_smear005,   slam: {correlation_search_space_smear_deviation: 0.05}}
+    - {name: C_smear02,    slam: {correlation_search_space_smear_deviation: 0.2}}
+    - {name: C_odomlow,    slam: {distance_variance_penalty: 0.2, angle_variance_penalty: 0.3}}
+    - {name: C_nobary,     slam: {use_scan_barycenter: false}}
+    - {name: C_buf10,      slam: {scan_buffer_size: 10}}
+    - {name: C_buf40,      slam: {scan_buffer_size: 40}}
+  D:  # オドメトリ重視
+    # 注意: *_variance_penalty は「分散」。大きいほどオドメトリを信用しない(D1〜D3, D5 は逆方向の確認)。
+    # Kartoの式: penalty = max(1 - 0.2*d^2/variance, minimum_*_penalty)
+    - {name: D0_odomonly,  slam: {use_scan_matching: false}}
+    - {name: D1_pen1x,     slam: {distance_variance_penalty: 1.0, angle_variance_penalty: 2.0}}
+    - {name: D2_pen4x,     slam: {distance_variance_penalty: 2.0, angle_variance_penalty: 4.0}}
+    - {name: D3_pen10x,    slam: {distance_variance_penalty: 5.0, angle_variance_penalty: 10.0}}
+    - {name: D4_pen4x_narrow, slam: {distance_variance_penalty: 2.0, angle_variance_penalty: 4.0,
+                                     correlation_search_space_dimension: 0.15, coarse_search_angle_offset: 0.17}}
+    - {name: D5_pen4x_minpen, slam: {distance_variance_penalty: 2.0, angle_variance_penalty: 4.0,
+                                     minimum_distance_penalty: 0.9, minimum_angle_penalty: 0.95}}
+    - {name: D6_trust_mid,  slam: {distance_variance_penalty: 0.1, angle_variance_penalty: 0.1,
+                                   minimum_distance_penalty: 0.3, minimum_angle_penalty: 0.5}}
+    - {name: D7_trust_high, slam: {distance_variance_penalty: 0.05, angle_variance_penalty: 0.02,
+                                   minimum_distance_penalty: 0.2, minimum_angle_penalty: 0.2}}
+    - {name: D8_trust_angle, slam: {angle_variance_penalty: 0.02, minimum_angle_penalty: 0.2}}
+    - {name: D9_trust_high_r5, range: 5,
+       slam: {distance_variance_penalty: 0.05, angle_variance_penalty: 0.02,
+              minimum_distance_penalty: 0.2, minimum_angle_penalty: 0.2}}
+  G:  # 第2弾: 基準T(=D6, 2m)から1軸ずつ。評価は継ぎ目(seam)と局所鮮明度
+    - {name: G1_d03_a03, slam: {distance_variance_penalty: 0.3, angle_variance_penalty: 0.3}}
+    - {name: G1_d03_a01, slam: {distance_variance_penalty: 0.3, angle_variance_penalty: 0.1}}
+    - {name: G1_d03_a003, slam: {distance_variance_penalty: 0.3, angle_variance_penalty: 0.03}}
+    - {name: G1_d03_a001, slam: {distance_variance_penalty: 0.3, angle_variance_penalty: 0.01}}
+    - {name: G1_d01_a03, slam: {distance_variance_penalty: 0.1, angle_variance_penalty: 0.3}}
+    - {name: G1_d01_a003, slam: {distance_variance_penalty: 0.1, angle_variance_penalty: 0.03}}
+    - {name: G1_d01_a001, slam: {distance_variance_penalty: 0.1, angle_variance_penalty: 0.01}}
+    - {name: G1_d003_a03, slam: {distance_variance_penalty: 0.03, angle_variance_penalty: 0.3}}
+    - {name: G1_d003_a01, slam: {distance_variance_penalty: 0.03, angle_variance_penalty: 0.1}}
+    - {name: G1_d003_a003, slam: {distance_variance_penalty: 0.03, angle_variance_penalty: 0.03}}
+    - {name: G1_d003_a001, slam: {distance_variance_penalty: 0.03, angle_variance_penalty: 0.01}}
+    - {name: G2_min01_02, slam: {minimum_distance_penalty: 0.1, minimum_angle_penalty: 0.2}}
+    - {name: G2_min05_07, slam: {minimum_distance_penalty: 0.5, minimum_angle_penalty: 0.7}}
+    - {name: G2_min03_09, slam: {minimum_distance_penalty: 0.3, minimum_angle_penalty: 0.9}}
+    - {name: G3_search02, slam: {correlation_search_space_dimension: 0.2}}
+    - {name: G3_search05, slam: {correlation_search_space_dimension: 0.5}}
+    - {name: G3_res0005,  slam: {correlation_search_space_resolution: 0.005}}
+    - {name: G3_res002,   slam: {correlation_search_space_resolution: 0.02}}
+    - {name: G3_coarse1deg, slam: {coarse_angle_resolution: 0.0175}}
+    - {name: G4_travel005, slam: {minimum_travel_distance: 0.05}}
+    - {name: G4_travel03,  slam: {minimum_travel_distance: 0.3}}
+    - {name: G4_heading01, slam: {minimum_travel_heading: 0.1}}
+    - {name: G4_heading035, slam: {minimum_travel_heading: 0.35}}
+    - {name: G4_buf10, slam: {scan_buffer_size: 10}}
+    - {name: G4_buf40, slam: {scan_buffer_size: 40}}
+    - {name: G5_linkfine005, slam: {link_match_minimum_response_fine: 0.05}}
+    - {name: G5_linkfine02,  slam: {link_match_minimum_response_fine: 0.2}}
+    - {name: G5_nobary, slam: {use_scan_barycenter: false}}
+    - {name: G5_smear005, slam: {correlation_search_space_smear_deviation: 0.05}}
+    - {name: G6_r15, range: 1.5}
+    - {name: G6_r4,  range: 4}
+# C/D の共通設定(個別に指定がなければこれを使う)
+group_defaults:
+  B: {loop: false, scale: true}
+  C: {fov: 240, range: best, loop: false, scale: true}
+  D: {fov: 240, range: best, loop: false, scale: true}
+  G: {fov: 240, range: 2, loop: false, scale: true,
+      slam: {distance_variance_penalty: 0.1, angle_variance_penalty: 0.1,
+             minimum_distance_penalty: 0.3, minimum_angle_penalty: 0.5}}

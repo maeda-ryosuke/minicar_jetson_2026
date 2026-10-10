@@ -1,5 +1,8 @@
 # 保存済みpose graphを使うslam_toolbox localization設定。
 #
+# 値は2026-10-07のbag再生検証で最良だった条件(L31)。tools/slam_sweep で再評価できる。
+# scan_filterは config/scan_filter_localization.yaml(前方240deg・2 m)と組み合わせる。
+#
 # map_file_nameはlaunch引数 posegraph_fileで上書きする。値には.posegraphや
 # .dataを付けず、/maps/track_v1のようにbasenameを指定する。
 # map -> odomをpublishするのはこのノードだけとし、odom -> base_linkは
@@ -22,8 +25,10 @@ slam_toolbox:
     use_sim_time: false
     mode: localization
     map_file_name: /maps/track_v1
-    # 任意位置から開始するため、起動後にRVizまたは/initialposeで概略姿勢を与える。
     map_start_at_dock: false
+    # 地図原点(track_v1は10/05走行の開始位置・向き)から走り始める前提の初期姿勢 [x, y, yaw]。
+    # 別の位置から始める場合は起動後にRVizまたは/initialposeで概略姿勢を与える。
+    map_start_pose: [0.0, 0.0, 0.0]
 
     debug_logging: false
     throttle_scans: 1
@@ -42,7 +47,8 @@ slam_toolbox:
 
     use_scan_matching: true
     use_scan_barycenter: true
-    minimum_travel_distance: 0.10
+    # 0.1 m では照合のたびに直線で前後に引きずられた。地図作成(MAP_H4)と同じ 0.3 m。
+    minimum_travel_distance: 0.3
     minimum_travel_heading: 0.2
     # localizationでは最近のscanだけを保持するrolling bufferになる。
     scan_buffer_size: 20
@@ -50,25 +56,31 @@ slam_toolbox:
     link_match_minimum_response_fine: 0.1
     link_scan_maximum_distance: 0.6
 
+    # localizationではループ閉じ込みが地図との広域照合(位置ずれからの唯一の復帰手段)になる。
+    # 平行な通路を取り違えないよう、閾値を厳しく探索範囲を狭くする(2026-10-07 検証 L31)。
     do_loop_closing: true
     loop_search_maximum_distance: 1.5
-    loop_match_minimum_chain_size: 15
+    loop_match_minimum_chain_size: 25
     loop_match_maximum_variance_coarse: 3.0
-    loop_match_minimum_response_coarse: 0.35
-    loop_match_minimum_response_fine: 0.45
+    loop_match_minimum_response_coarse: 0.5
+    loop_match_minimum_response_fine: 0.6
 
     correlation_search_space_dimension: 0.3
     correlation_search_space_resolution: 0.01
     correlation_search_space_smear_deviation: 0.1
-    loop_search_space_dimension: 4.0
+    # 既定4.0(±2 m)では隣の通路が探索範囲に入る。
+    loop_search_space_dimension: 1.0
     loop_search_space_resolution: 0.05
     loop_search_space_smear_deviation: 0.03
 
-    distance_variance_penalty: 0.5
-    angle_variance_penalty: 1.0
+    # 値は分散。小さいほどオドメトリの予測を信用する。既定0.5/1.0では予測がほぼ効かず、
+    # 両側の壁しか見えない直線で位置が引きずられて跳んだ。
+    distance_variance_penalty: 0.03
+    angle_variance_penalty: 0.03
     fine_search_angle_offset: 0.00349
     coarse_search_angle_offset: 0.349
     coarse_angle_resolution: 0.0349
-    minimum_angle_penalty: 0.9
-    minimum_distance_penalty: 0.5
+    # 上記ペナルティの下限。0.9のままだと分散を小さくしても効かない。
+    minimum_angle_penalty: 0.5
+    minimum_distance_penalty: 0.3
     use_response_expansion: true
