@@ -27,15 +27,17 @@ limits:
   v_min: -1.0               # [m/s] 後退あり。ただし後述の理由で通常は使わない
   v_max: 2.0                # [m/s]
   a_max: 2.0                # [m/s^2] 加減速とも同値
-  r_min: 1.0                # [m] 最小旋回半径
+  # 実機実測 (2026-10-10): 操舵を PWM 端 (pwm_params.json の left/right) まで
+  # 切って円を描かせ、半径 0.83m。
+  r_min: 0.83               # [m] 最小旋回半径
 
   # r_min から導出: delta_max = atan(wheelbase / r_min)
-  #   = atan(0.257 / 1.0) = 0.2516 rad = 14.41 deg
-  # 実機の機械限界とサーボ指令範囲を確認して更新すること。
-  delta_max: 0.2516         # [rad]
+  #   = atan(0.257 / 0.83) = 0.3003 rad = 17.20 deg
+  # motor_driver の steer_map はこの値を u=±1 (PWM 端) に対応させている。
+  delta_max: 0.3003         # [rad]
 
-  # v_max / r_min = 2.0。Twist に変換したときの angular.z の上限。
-  yaw_rate_max: 2.0         # [rad/s]
+  # v_max / r_min = 2.41。Twist に変換したときの angular.z の上限。
+  yaw_rate_max: 2.41        # [rad/s]
 
   # 車両側がTwistからdelta = atan(omega * L / v)相当で舵角を作る前提。
   # v=0では据え切りできないため、MPPIのサンプリングでvの下限を
