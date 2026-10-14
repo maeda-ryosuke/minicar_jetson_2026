@@ -91,6 +91,13 @@ RUN git clone --depth 1 --branch ${LIBREALSENSE_VERSION} \
     cmake --install /opt/librealsense/build && ldconfig && \
     rm -rf /opt/librealsense/build
 
+# slam_localization_amcl.launch.py 用。保存済み地図(pgm)に対する粒子フィルタの自己位置推定。
+# 上の apt レイヤーと librealsense のビルドをキャッシュのまま残すため別の RUN にする。
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ros-humble-nav2-amcl && \
+    rm -rf /var/lib/apt/lists/*
+
 # docker compose exec の対話シェルでも ROS 2 コマンドをそのまま使えるようにする。
 # 非対話 bash は compose の BASH_ENV で同じ setup.bash を読む。
 WORKDIR /ws
