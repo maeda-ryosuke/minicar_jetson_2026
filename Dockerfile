@@ -1,4 +1,4 @@
-FROM ros:humble
+FROM ros:humble AS base
 
 SHELL ["/bin/bash", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
@@ -124,3 +124,14 @@ ENV BASH_ENV=/etc/minicar/ros_setup.bash
 ENV DEBIAN_FRONTEND=
 ENTRYPOINT ["/bin/bash", "/etc/minicar/entrypoint.bash"]
 CMD ["bash"]
+
+# PC のリプレイ専用(compose の replay サービス)。bag を再生して rviz2 で見る。
+# fonts-noto-cjk は rviz2 の表示名などの日本語を表示するため。
+# 実機の jetson サービスは base ステージだけをビルドするので、ここは含まない。
+FROM base AS replay
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ros-humble-rviz2 \
+        ros-humble-nav2-rviz-plugins \
+        fonts-noto-cjk && \
+    rm -rf /var/lib/apt/lists/*

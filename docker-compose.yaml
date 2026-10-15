@@ -4,6 +4,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # rviz2 を含まない実機用ステージ。replay ステージは PC でだけ使う。
+      target: base
     container_name: jetson_humble
 
     # Jetson ホスト上の ROS 2 graph へ DDS で直接参加する。
@@ -49,10 +51,16 @@ services:
     stdin_open: true
     tty: true
 
-  # センサの無いPCでrosbagを再生してscan_filter・SLAMを検証する。
-  # docker compose --profile replay up -d replay で起動する(README「PCでbag再生」)。
+  # センサの無いPCでrosbagを再生し、実機と同じSLAM・AMCL・Nav2を動かして検証する。
+  # 実機用イメージ(base)に rviz2 を足した replay ステージを使い、画面はホストのXへ出す。
+  # docker compose --profile replay build replay → up -d replay で起動する(README「PCでbag再生」)。
+  # ホストで一度 xhost +local: を実行しておく。
   replay:
-    image: jetson_humble:latest
+    image: jetson_humble:replay
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: replay
     container_name: jetson_humble_replay
     profiles: [replay]
     environment:
@@ -61,7 +69,14 @@ services:
       ROS_LOCALHOST_ONLY: 1
       RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
       BASH_ENV: /etc/minicar/ros_setup.bash
+      # rviz2 の画面をホストのX(Wayland なら XWayland)へ出す。
+      DISPLAY: ${DISPLAY:-:0}
+      QT_X11_NO_MITSHM: 1
+    devices:
+      # rviz2 の GPU 描画。
+      - /dev/dri:/dev/dri
     volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
       - ./maps:/maps:rw
       - ./bags:/bags:rw
       # 検証条件ごとの scan_filter / slam_toolbox パラメータ。
