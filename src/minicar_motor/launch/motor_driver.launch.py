@@ -7,9 +7,9 @@
     # PWM を出さずに変換だけ確かめる
     ros2 launch minicar_motor motor_driver.launch.py backend:=dryrun
 
-    # 暫定スロットルマップを一時的に上書きする（ros2 run の -p と同じ）
+    # スロットルマップを一時的に上書きする（ros2 run の -p と同じ）
     ros2 launch minicar_motor motor_driver.launch.py \
-        throttle_map_u:="[-1.0,-1.0,0.0,1.0,1.0]"
+        throttle_map_u:="[-0.5,-0.10,0.0,0.25,0.25,0.375,0.50,0.625]"
 
 raceline.launch.py と違い、backend の既定は fabo_pca9685（実機で PWM を出す）。
 単体で上げる用途はベンチと実走だけなので。**車輪を浮かせてから起動する。**
@@ -18,7 +18,7 @@ raceline.launch.py も motor_driver を起動するので、同時に動かさ�
 （/cmd_vel の購読と PCA9685 への書き込みが二重になる）。
 
 throttle_map_u は空（既定）なら motor_driver_params.yaml の値を使う。
-throttle_map_v_mps と同じ長さ（5 点）で渡すこと。違えばノードが起動時に落ちる。
+yaml の throttle_map_v_mps と同じ長さ（今は 8 点）で渡すこと。違えばノードが起動時に落ちる。
 それ以外の配列パラメータは launch 引数にしていない。必要なときは
 MOTOR_BENCH.md 1-2 の ros2 run に -p を足して起動する。
 """
