@@ -2,7 +2,8 @@
 
 Jetson実機上でTG30 LiDAR、ROS 2 Humble、SLAM Toolbox、Nav2 MPPI、
 RealSense D455ドライバを動かすDocker環境(cuVSLAMは別コンテナ`~/Docker/minicar_isaac_vslam`)。
-Gazebo、RViz2、`robot_localization`はコンテナに含めない。
+Gazebo、`robot_localization`はコンテナに含めない。RViz2は実機用イメージ(`base`)には含めず、
+PCでbagを再生する`replay`イメージにだけ含める(§11)。
 
 このディレクトリは自己完結しており、`minicar_gazebo/`を参照しない。
 
@@ -560,18 +561,24 @@ rsync -av jetson@<jetsonのIP>:~/workspace/workspace_2026/minicar_jetson_2026/ba
 
 コンテナ内で作成したファイルはroot所有になる。Jetson側で削除するときは`sudo`が必要。
 
-## 11. PCでbag再生してmappingを検証する
+## 11. PCでbag再生して検証する
 
-センサの無いPC(x86_64でも可)で、Jetsonで記録したbagからscan_filterとSLAM Toolboxを
-パラメータを変えて検証する。`replay`サービスは`/dev/ttyUSB0`を要求せず、センサも起動しない。
+センサの無いPC(x86_64でも可)で、Jetsonで記録したbagからscan_filter・SLAM Toolbox・AMCL・Nav2を
+パラメータを変えて検証する。`replay`イメージは実機用の`base`ステージにRViz2を足したもので、
+実機コンテナと同じパッケージが入っている。`replay`サービスは`/dev/ttyUSB0`を要求せず、センサも起動しない。
 実機graphと混ざらないよう、Domain ID `42`(`REPLAY_ROS_DOMAIN_ID`で変更可)かつ
 localhost限定で動く。
 
 ```bash
 cd ~/Docker/jetson_humble
-docker compose build
+docker compose --profile replay build replay
 docker compose --profile replay up -d replay
+xhost +local:   # RViz2 の画面をホストへ出す(ログインごとに1回)
 ```
+
+- `src/`を変えたら`replay`もビルドし直す(`base`の上に作るため)。
+- `docker compose exec replay ros2 ...`のように直接実行するとROS環境が読まれない。
+  `bash -c "..."`で包む(`BASH_ENV`で`setup.bash`を読む)。
 
 条件ごとのパラメータは`replay_params/`(コンテナ内`/replay_params`)に置く。
 既定値からコピーして編集する。
@@ -586,27 +593,49 @@ docker compose exec replay bash -c \
 同時に起動する)。条件を変えるたびに起動し直す(地図は引き継がない)。
 
 ```bash
-docker compose exec replay ros2 launch minicar_bringup slam_mapping.launch.py use_sim_time:=true \
+docker compose exec replay bash -c "ros2 launch minicar_bringup slam_mapping.launch.py use_sim_time:=true \
   scan_params_file:=/replay_params/scan_r3.yaml \
-  slam_params_file:=/replay_params/slam_r3.yaml
+  slam_params_file:=/replay_params/slam_r3.yaml"
 ```
 
 端末2でbagを再生する。`--clock`と`use_sim_time:=true`は必ず対で使う。
 `/scan_filtered`入りの古いbagでも混ざらないよう、トピックを明示する。
 
 ```bash
-docker compose exec replay ros2 bag play /bags/<bag> --clock \
-  --topics /scan /tf /tf_static /odom /imu /odometry/filtered
+docker compose exec replay bash -c "ros2 bag play /bags/<bag> --clock \
+  --topics /scan /tf /tf_static /odom /imu /odometry/filtered"
 ```
 
 再生が終わったら、条件名を付けて保存する。
 
 ```bash
-docker compose exec replay ros2 run nav2_map_server map_saver_cli -f /maps/<bag>_r3
-docker compose exec replay ros2 service call /slam_toolbox/serialize_map \
-  slam_toolbox/srv/SerializePoseGraph "{filename: '/maps/<bag>_r3'}"
+docker compose exec replay bash -c "ros2 run nav2_map_server map_saver_cli -f /maps/<bag>_r3"
+docker compose exec replay bash -c "ros2 service call /slam_toolbox/serialize_map \
+  slam_toolbox/srv/SerializePoseGraph \"{filename: '/maps/<bag>_r3'}\""
 ```
 
 - scan_filterの`range_max`とslam_toolboxの`max_laser_range`は対で変える。
 - scan_filterの起動ログ`first scan: N -> M beams ...`で、FOVと距離ゲートが効いているか確認できる。
 - 終了は`docker compose --profile replay down`。
+
+### AMCLをRViz2で見る
+
+端末1でAMCL、端末2でRViz2(再生より先に起動する)、端末3でbagを再生する。
+初期姿勢は`maps/track_v1.md`の開始姿勢(10/06の走行の例)。
+
+```bash
+docker compose exec replay bash -c "ros2 launch minicar_bringup slam_localization_amcl.launch.py \
+  use_sim_time:=true initial_x:=-0.09 initial_y:=0.02 initial_yaw:=-0.0122"
+docker compose exec replay bash -c "rviz2 -d /tools/bag_analysis/amcl_compare.rviz --ros-args -p use_sim_time:=true"
+docker compose exec replay bash -c "ros2 bag play /bags/20261006_localization_fast --clock \
+  --topics /scan /tf /tf_static /odometry/filtered"
+```
+
+- パラメータを変えるときは`replay_params/`へamcl.yamlをコピーし、`amcl_params_file:=/replay_params/<名前>.yaml`。
+  再生し直すとsim timeが戻るので、AMCLも毎回起動し直す。
+- `/tf`に走行時の`map -> odom`が入ったbag(202610101840など)は、再生に`--remap /tf:=/tf_bag`を付け、
+  `python3 /tools/slam_sweep/tf_relay.py --raceline /maps/raceline.csv`で`odom -> base_link`だけを`/tf`へ中継する。
+- Nav2 MPPIもbagで動かせるが開ループ(`cmd_vel`を出してもbagのロボットは動かない)。
+  センサ・モータのドライバはハードが無いので動かない。
+- RViz2の設定は`/tools`(読み取り専用)にあるので、変更を保存するときは`/replay_params`へ別名で保存する。
+- AMD(Mesa)では地図表示で`indexed_8bit_image ... GLSL link result`のエラーが出るが、地図は表示される。

@@ -41,6 +41,10 @@ def test_slam_launch_files_expose_required_arguments(tmp_path):
             "use_sim_time", "posegraph_file", "slam_params_file",
             "scan_params_file",
         ),
+        "slam_localization_amcl.launch.py": (
+            "use_sim_time", "map_yaml", "amcl_params_file", "scan_params_file",
+            "initial_x", "initial_y", "initial_yaw",
+        ),
         "sensors.launch.py": ("enable_camera",),
         "perception.launch.py": (
             "slam_mode", "use_sim_time", "posegraph_file", "with_sensors",
@@ -69,3 +73,15 @@ def test_localization_scan_filter_matches_laser_range():
     assert scan["output_topic"] == localization["scan_topic"]
     assert scan["range_max"] == localization["max_laser_range"]
     assert len(localization["map_start_pose"]) == 3
+
+
+def test_amcl_keeps_the_localization_contract():
+    share = Path(get_package_share_directory("minicar_bringup")) / "config"
+    amcl = yaml.safe_load((share / "amcl_localization.yaml").read_text())["amcl"]["ros__parameters"]
+    localization = _params("slam_toolbox_localization.yaml")
+    assert amcl["global_frame_id"] == localization["map_frame"]
+    assert amcl["odom_frame_id"] == localization["odom_frame"]
+    assert amcl["base_frame_id"] == localization["base_frame"]
+    assert amcl["scan_topic"] == localization["scan_topic"]
+    assert amcl["laser_max_range"] == localization["max_laser_range"]
+    assert amcl["tf_broadcast"] is True

@@ -16,6 +16,10 @@ motor_driver も同じ delta_max で舵角をクリップする)。
 
   raceline --FollowPath--> controller_server --/cmd_vel_raw-->
       safety --/cmd_vel--> motor_driver
+
+MPPI の候補軌道(/trajectories)は負荷が大きいので既定では出さない。bag 再生で
+見るときだけ use_sim_time:=true visualize:=true trajectory_step:=50 を指定する
+(trajectory_step は batch_size 本のうち何本おきに出すか。省略時は yaml の値)。
 """
 
 from pathlib import Path
@@ -37,9 +41,16 @@ def _controller_server(context):
     vehicle_params_file = LaunchConfiguration("vehicle_params_file").perform(context)
     r_min = min_turning_radius(vehicle_params_file)
     sim_time = ParameterValue(LaunchConfiguration("use_sim_time"), value_type=bool)
+    visualize = LaunchConfiguration("visualize").perform(context).lower() == "true"
+    trajectory_step = LaunchConfiguration("trajectory_step").perform(context)
+    viz = {"visualize": visualize}
+    if trajectory_step:
+        viz["TrajectoryVisualizer"] = {"trajectory_step": int(trajectory_step)}
     return [
         LogInfo(msg=f"MPPI min_turning_r = {r_min:.3f} m "
                     f"(wheelbase / tan(delta_max), {vehicle_params_file})"),
+        LogInfo(msg=f"MPPI visualize = {visualize}, "
+                    f"trajectory_step = {trajectory_step or 'yaml'}"),
         Node(
             package="nav2_controller",
             executable="controller_server",
@@ -50,6 +61,7 @@ def _controller_server(context):
                 {"use_sim_time": sim_time},
                 # 後ろほど優先される。yaml の値より vehicle_params を正とする。
                 {"FollowPath": {"AckermannConstraints": {"min_turning_r": r_min}}},
+                {"FollowPath": viz},
             ],
             # safety_nodeだけが最終 /cmd_vel をpublishする。
             remappings=[("cmd_vel", "/cmd_vel_raw")],
@@ -79,6 +91,10 @@ def generate_launch_description():
         DeclareLaunchArgument("raceline_file", default_value="/maps/raceline.csv"),
         # 誤通電を防ぐため既定はPWMを出さない。
         DeclareLaunchArgument("backend", default_value="dryrun"),
+        # 実走では負荷を避けて OFF。bag 再生で候補軌道を見るときだけ true にする。
+        DeclareLaunchArgument("visualize", default_value="false"),
+        # 空なら yaml の TrajectoryVisualizer.trajectory_step を使う。
+        DeclareLaunchArgument("trajectory_step", default_value=""),
 
         OpaqueFunction(function=_controller_server),
         Node(

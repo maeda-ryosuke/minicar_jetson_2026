@@ -112,3 +112,10 @@ def test_launch_keeps_a_single_command_chain_and_uses_imu_data():
     assert '"imu_topic": "/imu/data"' in launch
     assert 'package="minicar_safety"' in launch
     assert "raceline.launch.py" in launch
+
+
+def test_launch_does_not_visualize_trajectories_by_default():
+    """候補軌道の publish は実走で負荷になるので、既定は OFF にしておく。"""
+    launch = (_share("minicar_nav2") / "launch/raceline_mppi.launch.py").read_text()
+
+    assert 'DeclareLaunchArgument("visualize", default_value="false")' in launch

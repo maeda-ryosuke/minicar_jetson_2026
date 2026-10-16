@@ -2,8 +2,12 @@
 """実走bagの自己位置を周回ごとに地図・追従経路と重ねて、誤差の出た場所を探す(ホストで実行)。
 
     python3 tools/bag_analysis/pose_error.py bags/<bag> [--raceline maps/raceline.csv]
+    python3 tools/bag_analysis/pose_error.py bags/<bag> --tf-csv <再生結果>/tf.csv --out <出力先> --label AMCL
 
 先に extract_run.py で <bag>/analysis/run.npz を作っておく。
+--tf-csv を渡すと、自己位置を bag 再生で得た map->odom (monitor.py の tf.csv) と bag の odom->base_link の
+合成に差し替える(AMCL などの再生結果を同じ指標で評価する)。周回の区切りは常に走行時の自己位置で決めるので、
+条件の間で同じ区間を比べられる。要約は <出力先>/summary.json。
 
 正解軌跡は無いので次の3つで見る。
   - SLAM自己位置: map->odom (slam_toolbox) と odom->base_link (EKF) の合成。
@@ -16,6 +20,7 @@
 壁が二重になった所があり、一致率の基準にならない。
 """
 import argparse
+import json
 import math
 from pathlib import Path
 
@@ -131,23 +136,34 @@ def main():
     ap.add_argument('--raceline', default='maps/raceline.csv')
     ap.add_argument('--map', default='maps/track_v1.yaml',
                     help='localizationが照合に使った地図。空文字ならbagの最後の/map(走行中のscanが足されたもの)')
+    ap.add_argument('--tf-csv', default='', help='再生で得た map->odom (monitor.py の tf.csv)')
+    ap.add_argument('--out', default='', help='出力先(既定 <bag>/analysis)')
+    ap.add_argument('--label', default='SLAM', help='図の凡例に出す自己位置の名前')
     args = ap.parse_args()
     bag = Path(args.bag)
-    out = bag / 'analysis'
-    f = np.load(out / 'run.npz')
+    f = np.load(bag / 'analysis/run.npz')
+    out = Path(args.out) if args.out else bag / 'analysis'
+    out.mkdir(parents=True, exist_ok=True)
+    name = args.label
     meta = yaml.safe_load((bag / 'metadata.yaml').read_text())['rosbag2_bagfile_information']
     t_bag = meta['starting_time']['nanoseconds_since_epoch'] * 1e-9
     rl = np.loadtxt(args.raceline, delimiter=',', skiprows=1)
     m = Grid(f, args.map)
 
-    mo, ob = uniq(f['tf_map_odom']), uniq(f['tf_odom_base'])
+    mo_run, ob = uniq(f['tf_map_odom']), uniq(f['tf_odom_base'])
+    mo = mo_run
+    if args.tf_csv:
+        raw = np.genfromtxt(args.tf_csv, delimiter=',', names=True)
+        mo = uniq(np.c_[raw['t'], raw['mo_x'], raw['mo_y'], raw['mo_yaw']])
     ekf = uniq(f['ekf'])
-    t = np.arange(max(mo[0, 0], ob[0, 0]), min(mo[-1, 0], ob[-1, 0]), DT)
+    t = np.arange(max(mo[0, 0], ob[0, 0], mo_run[0, 0]), min(mo[-1, 0], ob[-1, 0], mo_run[-1, 0]), DT)
     MO, OB = interp_pose(mo, t), interp_pose(ob, t)
     slam = compose(MO, OB)
     v = np.interp(t, ekf[:, 0], np.abs(ekf[:, 4]))
     wz = np.degrees(np.interp(t, ekf[:, 0], np.abs(ekf[:, 5])))
-    lap, ridx, lat = lap_split(slam[0], slam[1], rl)
+    run_pose = compose(interp_pose(mo_run, t), OB)      # 走行時の自己位置。周回の区切りに使う
+    lap, _, _ = lap_split(run_pose[0], run_pose[1], rl)
+    _, ridx, lat = lap_split(slam[0], slam[1], rl)
     tr = t - t_bag
 
     # 各周の開始SLAM姿勢にEKFの移動量だけを積む
@@ -191,7 +207,8 @@ def main():
     # ---- 周回ごとの重ね描き
     img = m.image()
     laps = np.unique(lap)
-    print(f'周回数 {len(laps)} (bag開始 {t_bag:.1f}, 経路始点 ({rl[0, 0]:.2f}, {rl[0, 1]:.2f}))')
+    summary = {'label': name, 'tf_csv': args.tf_csv, 'laps': []}
+    print(f'[{name}] 周回数 {len(laps)} (bag開始 {t_bag:.1f}, 経路始点 ({rl[0, 0]:.2f}, {rl[0, 1]:.2f}))')
     print(f'{"周":>2} {"時刻[s]":>13} {"ドリフト最大":>10} {"周末":>6} {"yaw最大":>7} {"一致率中央":>8} {"低一致":>6} {"ジャンプ":>5} {"経路横ずれ平均":>10}')
     for L in laps:
         s = lap == L
@@ -201,12 +218,12 @@ def main():
         fig, ax = plt.subplots(figsize=(11, 7.2), dpi=130)
         ax.imshow(img, cmap='gray', vmin=0, vmax=1, origin='lower', extent=m.extent, interpolation='nearest')
         ax.plot(np.r_[rl[:, 0], rl[0, 0]], np.r_[rl[:, 1], rl[0, 1]], color=C_PATH, lw=1.5, ls=(0, (4, 3)), label='追従path (raceline.csv)')
-        ax.plot(ekf_only[0][s], ekf_only[1][s], color=C_EKF, lw=2, label='EKFのみ (周の開始でSLAMに合わせる)')
-        ax.plot(slam[0][s], slam[1][s], color=C_SLAM, lw=2, label='SLAM自己位置 (map→base_link)')
+        ax.plot(ekf_only[0][s], ekf_only[1][s], color=C_EKF, lw=2, label=f'EKFのみ (周の開始で{name}に合わせる)')
+        ax.plot(slam[0][s], slam[1][s], color=C_SLAM, lw=2, label=f'{name}自己位置 (map→base_link)')
         ax.plot(*rl[0, :2], marker='s', ms=8, mfc='white', mec=INK, ls='none', label='経路始点(周の区切り)')
         if J:
             ax.plot(slam[0][J], slam[1][J], marker='D', ms=8, mfc='none', mec=C_JUMP, mew=2, ls='none',
-                    label=f'SLAM補正ジャンプ (0.2s で >{JUMP_M * 100:.0f}cm or >{JUMP_DEG:.0f}°)')
+                    label=f'{name}補正ジャンプ (0.2s で >{JUMP_M * 100:.0f}cm or >{JUMP_DEG:.0f}°)')
             for i in J:
                 ax.annotate(f'{tr[i]:.0f}s', (slam[0][i], slam[1][i]), xytext=(6, 6), textcoords='offset points',
                             fontsize=8, color=INK)
@@ -214,7 +231,7 @@ def main():
         if lw_.any():
             ax.plot(sp[0][lw_], sp[1][lw_], marker='o', ms=8, mfc='none', mec=C_LOW, mew=1.5, ls='none',
                     label=f'地図との一致率 < {LOW * 100:.0f}%')
-        ax.set_title(f'{bag.name} ({Path(args.map).stem or "bag /map"})  周 {L + 1}   t = {a:.0f}–{b:.0f} s   '
+        ax.set_title(f'{bag.name} {name} ({Path(args.map).stem or "bag /map"})  周 {L + 1}   t = {a:.0f}–{b:.0f} s   '
                      f'ドリフト最大 {drift[s].max():.2f} m / 一致率中央 {np.median(match[ss]) * 100:.0f}%',
                      fontsize=11, color=INK, loc='left')
         ax.set_xlabel('x [m] (map)', color=MUTED)
@@ -224,6 +241,13 @@ def main():
         fig.tight_layout()
         fig.savefig(out / f'overlay_lap{L + 1}.png')
         plt.close(fig)
+        mv = ss & (sv > 0.05)
+        summary['laps'].append({'lap': int(L + 1), 't': [round(float(a), 1), round(float(b), 1)],
+                                'match_med': round(float(np.median(match[mv])) * 100, 1),
+                                'match_p10': round(float(np.percentile(match[mv], 10)) * 100, 1),
+                                'low_pct': round(float((match[mv] < LOW).mean()) * 100, 1),
+                                'drift_max': round(float(drift[s].max()), 3), 'jumps': len(J),
+                                'lat_mean': round(float(lat[s & (v > 0.05)].mean()), 3)})
         print(f'{L + 1:>2} {a:6.1f}-{b:6.1f} {drift[s].max():9.2f}m {drift[s][-1]:5.2f}m {drift_yaw[s].max():6.1f}° '
               f'{np.median(match[ss]) * 100:8.0f}% {lw_.sum():6d} {len(J):5d} {lat[s & (v > 0.05)].mean():9.3f}m')
 
@@ -246,14 +270,29 @@ def main():
             ax.axvline(tr[lap == L][0], color=INK, lw=0.8, ls='--')
     for i in jump_i:
         axs[0].axvline(tr[i], color=C_JUMP, lw=0.8, alpha=0.6)
-    axs[0].set_title(f'{bag.name}  破線=周の区切り  紫線=SLAM補正ジャンプ', fontsize=10, loc='left', color=INK)
+    axs[0].set_title(f'{bag.name} {name}  破線=周の区切り  紫線=補正ジャンプ', fontsize=10, loc='left', color=INK)
     axs[-1].set_xlabel('bag開始からの時間 [s] (ros2 bag play --start-offset に使える)', color=MUTED)
     fig.tight_layout()
     fig.savefig(out / 'timeseries.png')
     plt.close(fig)
 
     # ---- 確認候補の一覧
-    print(f'\nSLAM補正ジャンプ {len(jump_i)} 件(大きい順に上位15)')
+    mv = sv > 0.05
+    summary.update({
+        'match_med': round(float(np.median(match[mv])) * 100, 1),
+        'match_p10': round(float(np.percentile(match[mv], 10)) * 100, 1),
+        'low_pct': round(float((match[mv] < LOW).mean()) * 100, 1),
+        'jumps': len(jump_i), 'jumps_10cm': int(sum(dmo[i:i + 2 * k].max() > 0.10 for i in jump_i)),
+        'max_jump_m': round(float(dmo.max()), 3), 'max_jump_deg': round(float(dmy.max()), 2),
+        'lat_mean': round(float(lat[v > 0.05].mean()), 3), 'drift_max': round(float(drift.max()), 3),
+        'series': {'t': [round(float(x), 2) for x in (st - t_bag)[::2]],
+                   'match': [round(float(x) * 100, 1) for x in match[::2]]},
+        'traj': {'t': [round(float(x), 2) for x in tr[::4]], 'x': [round(float(x), 3) for x in slam[0][::4]],
+                 'y': [round(float(x), 3) for x in slam[1][::4]]}})
+    (out / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False))
+    print(f'全体(走行中) 一致率中央 {summary["match_med"]}% p10 {summary["match_p10"]}% 低一致 {summary["low_pct"]}% '
+          f'ジャンプ {summary["jumps"]} 最大 {summary["max_jump_m"]}m/{summary["max_jump_deg"]}° 経路横ずれ {summary["lat_mean"]}m')
+    print(f'\n{name}補正ジャンプ {len(jump_i)} 件(大きい順に上位15)')
     for i in sorted(jump_i, key=lambda i: -dmo[i])[:15]:
         print(f'  t={tr[i]:6.1f}s 周{lap[i] + 1} ({slam[0][i]:5.2f},{slam[1][i]:5.2f}) '
               f'補正 {dmo[i] * 100:4.1f}cm {dmy[i]:4.1f}°  v={v[i]:.2f} wz={wz[i]:4.0f}°/s')
