@@ -360,3 +360,84 @@ class MotorDriverCore:
         count = mid + u * ((hi - mid) if u >= 0.0 else (mid - lo))
         return int(round(float(np.clip(count, self.cfg.count_min,
                                        self.cfg.count_max))))
+
+
+# ======================================================================
+# 速度フィードバック
+# ======================================================================
+
+@dataclass(frozen=True)
+class SpeedOutput:
+    """1 周期ぶんの速度制御の出力。debug publish 用にすべての項を持つ。"""
+
+    u: float        # 最終スロットル u_t = u_ff + u_p + u_i を [0, u_max] でクランプ
+    u_ff: float     # フィードフォワード (throttle_map の値)
+    u_p: float      # 比例項
+    u_i: float      # 積分項
+    error: float    # v_cmd - v_meas [m/s]
+
+
+class SpeedController:
+    """前進側の速度 PI。throttle_map をフィードフォワードにして、足りない分を足す。
+
+        u_t = u_ff(v_cmd) + kp * e + ki * ∫e dt,   e = v_cmd - v_meas
+
+    === なぜ要るか ===
+
+    ESC + ブラシモータは「電圧の指令」で、同じカウントでも負荷で速度が変わる。
+    実走 bag (2026-10-16 18:25 / 19:00) では:
+
+      - コース上の実速度は指令の約 7 割 (床で作った throttle_map が合わない)
+      - 舵いっぱいのコーナーやつなぎ目で停止し、**同じカウントのまま
+        7〜100 秒以上動き出せなかった**。オープンループでは止まっても出力が増えない
+
+    積分項は止まっている間も誤差 (>= 0.5 m/s) を溜め続けるので、静止摩擦を
+    越えるまで出力を上げて押し出す。
+
+    === 安全側の設計 ===
+
+      - 出力は [0, u_max]。PI でブレーキ・後退は出さない (後退は従来どおり
+        後退シーケンス経由のオープンループ)
+      - 積分項は [i_min, i_max] で頭打ち。/odom が壊れて 0 を返し続けても、
+        出力は u_ff + kp*v_cmd + i_max までしか上がらない
+      - 出力が上限 (または 0) に張り付いている間は、その向きへ積分しない
+        (アンチワインドアップ)。解除した瞬間に溜めた分で飛び出さない
+      - 停止指令・中立・/odom 途絶のたびに reset() で積分を捨てる (ノード側)
+    """
+
+    def __init__(self, kp: float, ki: float, i_min: float, i_max: float,
+                 u_max: float):
+        if kp < 0.0 or ki < 0.0:
+            raise ValueError(f"speed_kp / speed_ki は 0 以上であること: {kp}, {ki}")
+        if not (i_min <= 0.0 <= i_max):
+            raise ValueError(
+                f"speed_i_min <= 0 <= speed_i_max であること: {i_min}, {i_max}")
+        if not (0.0 < u_max <= 1.0):
+            raise ValueError(f"speed_u_max は (0, 1] であること: {u_max}")
+        self.kp, self.ki = float(kp), float(ki)
+        self.i_min, self.i_max = float(i_min), float(i_max)
+        self.u_max = float(u_max)
+        self.u_i = 0.0
+
+    def reset(self) -> None:
+        self.u_i = 0.0
+
+    def update(self, v_cmd: float, v_meas: float, u_ff: float,
+               dt: float) -> SpeedOutput:
+        """1 周期進める。入力が非有限なら積分を捨てて u_ff だけを返す。"""
+        if not all(math.isfinite(x) for x in (v_cmd, v_meas, u_ff, dt)) or dt <= 0.0:
+            self.reset()
+            u = float(np.clip(u_ff, 0.0, self.u_max)) if math.isfinite(u_ff) else 0.0
+            return SpeedOutput(u=u, u_ff=u_ff, u_p=0.0, u_i=0.0, error=0.0)
+
+        e = v_cmd - v_meas
+        u_p = self.kp * e
+        u_i = float(np.clip(self.u_i + self.ki * e * dt, self.i_min, self.i_max))
+        u_raw = u_ff + u_p + u_i
+        # 条件付き積分: 張り付いた向きへさらに溜めない。
+        if (u_raw > self.u_max and e > 0.0) or (u_raw < 0.0 and e < 0.0):
+            u_i = self.u_i
+            u_raw = u_ff + u_p + u_i
+        self.u_i = u_i
+        u = float(np.clip(u_raw, 0.0, self.u_max))
+        return SpeedOutput(u=u, u_ff=u_ff, u_p=u_p, u_i=u_i, error=e)

@@ -20,7 +20,8 @@ import sys
 import numpy as np
 
 from minicar_motor.motor_driver_core import (
-    MotorCommand, MotorConfig, MotorDriverCore, as_table, piecewise_linear,
+    MotorCommand, MotorConfig, MotorDriverCore, SpeedController, as_table,
+    piecewise_linear,
 )
 from minicar_motor.pwm_backend import DryRunBackend, make_backend
 
@@ -375,6 +376,130 @@ def test_backend(core: MotorDriverCore) -> None:
 
 
 # ----------------------------------------------------------------------
+def load_speed_params() -> dict:
+    """motor_driver_params.yaml の速度 PI の値。無ければノードの既定と同じ値。"""
+    p = {"speed_kp": 0.15, "speed_ki": 0.6, "speed_i_min": -0.4,
+         "speed_i_max": 0.3, "speed_u_max": 0.8, "speed_control": "off"}
+    md_path = os.path.join(CONFIG, "motor_driver_params.yaml")
+    if os.path.exists(md_path):
+        import yaml
+        with open(md_path, encoding="utf-8") as f:
+            y = yaml.safe_load(f)["motor_driver"]["ros__parameters"]
+        p.update({k: y[k] for k in p if k in y})
+    return p
+
+
+def make_speed(p: dict) -> SpeedController:
+    return SpeedController(kp=p["speed_kp"], ki=p["speed_ki"],
+                           i_min=p["speed_i_min"], i_max=p["speed_i_max"],
+                           u_max=p["speed_u_max"])
+
+
+def test_speed_pi_basic() -> None:
+    """11. 速度 PI: 遅ければ足し、速ければ引き、出力は [0, u_max] に収まる。"""
+    sc = SpeedController(kp=0.2, ki=1.0, i_min=-0.4, i_max=0.3, u_max=0.8)
+    out = sc.update(v_cmd=0.6, v_meas=0.0, u_ff=0.3, dt=0.02)
+    check(out.u > 0.3, f"11. 遅いのに足していない: {out}")
+    check(abs(out.u_p - 0.2 * 0.6) < 1e-12, f"11. 比例項が kp*e でない: {out.u_p}")
+    sc.reset()
+    out = sc.update(v_cmd=0.6, v_meas=1.2, u_ff=0.3, dt=0.02)
+    check(out.u < 0.3, f"11. 速いのに引いていない: {out}")
+    # 大きく速すぎても負 (ブレーキ / 後退) は出さない
+    out = sc.update(v_cmd=0.5, v_meas=5.0, u_ff=0.1, dt=0.02)
+    check(out.u == 0.0, f"11. PI が負のスロットルを出した: {out.u}")
+    # e=0 で u_ff そのまま
+    sc.reset()
+    out = sc.update(v_cmd=0.6, v_meas=0.6, u_ff=0.37, dt=0.02)
+    check(abs(out.u - 0.37) < 1e-12, f"11. 誤差 0 なのに u_ff から動いた: {out.u}")
+
+
+def test_speed_pi_stall_and_windup() -> None:
+    """12. 止まったままなら積分で押し出す。ただし上限で頭打ちし、溜め込まない。
+
+    2026-10-16 の bag では、つなぎ目と舵いっぱいのコーナーで同じカウントのまま
+    7〜100 秒以上止まっていた。積分が無いと出力が増えない。
+    逆に溜め込みすぎると、動き出した瞬間に飛び出す (アンチワインドアップ)。
+    """
+    sc = SpeedController(kp=0.15, ki=0.6, i_min=-0.4, i_max=0.3, u_max=0.8)
+    u_hist = [sc.update(0.6, 0.0, 0.3, 0.02).u for _ in range(50)]   # 1 秒止まったまま
+    check(u_hist[-1] > u_hist[0] + 0.2,
+          f"12. 1 秒止まっても出力がほとんど増えない: {u_hist[0]:.3f} -> {u_hist[-1]:.3f}")
+    check(all(b >= a - 1e-12 for a, b in zip(u_hist, u_hist[1:])),
+          "12. 止まっている間に出力が下がった")
+    for _ in range(5000):                                           # 100 秒止まったまま
+        out = sc.update(0.6, 0.0, 0.3, 0.02)
+    check(out.u_i <= 0.3 + 1e-12, f"12. 積分が i_max を超えた: {out.u_i}")
+    check(out.u <= 0.8 + 1e-12, f"12. 出力が u_max を超えた: {out.u}")
+    # u_max に張り付く条件では、張り付いた時点で積分を止める
+    sc2 = SpeedController(kp=0.15, ki=0.6, i_min=-0.4, i_max=0.3, u_max=0.6)
+    for _ in range(5000):
+        out2 = sc2.update(0.6, 0.0, 0.45, 0.02)
+    check(out2.u_i < 0.3 - 1e-6,
+          f"12. u_max に張り付いても積分し続けた (ワインドアップ): u_i={out2.u_i}")
+    # 動き出して追いついたら、溜めた分を引きずらず速やかに戻る
+    n = 0
+    while sc2.update(0.6, 0.9, 0.45, 0.02).u > 0.45 and n < 500:
+        n += 1
+    check(n * 0.02 < 1.0, f"12. 速すぎるのに出力が下がるまで {n * 0.02:.2f}s かかった")
+
+
+def test_speed_pi_reset_and_nonfinite() -> None:
+    """13. reset で積分を捨てる。NaN 入力は積分を捨てて u_ff だけ返す。"""
+    sc = SpeedController(kp=0.15, ki=0.6, i_min=-0.4, i_max=0.3, u_max=0.8)
+    for _ in range(100):
+        sc.update(0.6, 0.0, 0.3, 0.02)
+    sc.reset()
+    check(sc.u_i == 0.0, f"13. reset で積分が残った: {sc.u_i}")
+    for _ in range(100):
+        sc.update(0.6, 0.0, 0.3, 0.02)
+    for bad in ((math.nan, 0.0, 0.3, 0.02), (0.6, math.inf, 0.3, 0.02),
+                (0.6, 0.0, 0.3, 0.0), (0.6, 0.0, 0.3, -0.02)):
+        out = sc.update(*bad)
+        check(sc.u_i == 0.0, f"13. 非有限 / dt<=0 {bad} で積分が残った")
+        check(abs(out.u - 0.3) < 1e-12, f"13. 非有限 {bad} で u_ff 以外を出した: {out.u}")
+    out = sc.update(0.6, 0.0, math.nan, 0.02)
+    check(out.u == 0.0, f"13. u_ff が NaN で 0 以外を出した: {out.u}")
+
+
+def test_speed_pi_validation() -> None:
+    """14. 矛盾するゲイン・範囲は構築時に落とす。"""
+    for kw in ({"kp": -0.1}, {"ki": -1.0}, {"i_min": 0.1}, {"i_max": -0.1},
+               {"u_max": 0.0}, {"u_max": 1.5}):
+        args = dict(kp=0.15, ki=0.6, i_min=-0.4, i_max=0.3, u_max=0.8)
+        args.update(kw)
+        try:
+            SpeedController(**args)
+            check(False, f"14. {kw} を受け付けた")
+        except ValueError:
+            pass
+
+
+def test_speed_pi_real_config(core: MotorDriverCore) -> None:
+    """15. 実設定の yaml で、最悪でも出力が front..stop の間に収まる。
+
+    /odom が壊れて 0 を返し続けても (積分が i_max まで溜まっても)、
+    出力カウントは speed_u_max で頭打ちし、front を越えない。
+    """
+    p = load_speed_params()
+    check(p["speed_control"] in ("off", "pi"),
+          f"15. speed_control が off / pi でない: {p['speed_control']!r}")
+    sc = make_speed(p)
+    worst = 0.0
+    for v_cmd in np.linspace(core.cfg.v_eps * 1.01, core.cfg.v_max, 30):
+        sc.reset()
+        u_ff = core.throttle_to_u(v_cmd)
+        for _ in range(2000):
+            out = sc.update(v_cmd, 0.0, u_ff, 0.02)
+        worst = max(worst, out.u)
+    c_worst = core.to_count(worst, "throttle")
+    lo, hi = sorted((core.cfg.throttle_front, core.cfg.throttle_stop))
+    check(lo <= c_worst <= hi,
+          f"15. 最悪出力 {c_worst} カウントが front..stop ({lo}..{hi}) の外")
+    check(worst <= p["speed_u_max"] + 1e-12, f"15. 最悪出力 u={worst} が u_max を超えた")
+    print(f"  速度 PI の最悪出力 u={worst:.3f} = {c_worst} カウント "
+          f"(kp={p['speed_kp']} ki={p['speed_ki']} i={p['speed_i_min']}..{p['speed_i_max']})")
+
+
 def main() -> int:
     print("motor_driver_core の単体テスト")
     cfg = load_cfg()
@@ -398,6 +523,11 @@ def main() -> int:
         ("8. 実設定の全域スイープ", lambda: test_full_sweep(core)),
         ("9. 設定の矛盾検出", test_config_validation),
         ("10. PWM バックエンド", lambda: test_backend(core)),
+        ("11. 速度 PI の向きと範囲", test_speed_pi_basic),
+        ("12. 速度 PI の停止からの押し出しとワインドアップ", test_speed_pi_stall_and_windup),
+        ("13. 速度 PI の reset と非有限入力", test_speed_pi_reset_and_nonfinite),
+        ("14. 速度 PI の設定検証", test_speed_pi_validation),
+        ("15. 実設定の速度 PI の最悪出力", lambda: test_speed_pi_real_config(core)),
     ]
     for name, fn in tests:
         before = len(FAILURES)
