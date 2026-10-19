@@ -379,7 +379,8 @@ def test_backend(core: MotorDriverCore) -> None:
 def load_speed_params() -> dict:
     """motor_driver_params.yaml の速度 PI の値。無ければノードの既定と同じ値。"""
     p = {"speed_kp": 0.15, "speed_ki": 0.6, "speed_i_min": -0.4,
-         "speed_i_max": 0.3, "speed_u_max": 0.8, "speed_control": "off"}
+         "speed_i_max": 0.3, "speed_u_max": 0.8, "speed_u_min": 0.0,
+         "speed_control": "off"}
     md_path = os.path.join(CONFIG, "motor_driver_params.yaml")
     if os.path.exists(md_path):
         import yaml
@@ -392,7 +393,7 @@ def load_speed_params() -> dict:
 def make_speed(p: dict) -> SpeedController:
     return SpeedController(kp=p["speed_kp"], ki=p["speed_ki"],
                            i_min=p["speed_i_min"], i_max=p["speed_i_max"],
-                           u_max=p["speed_u_max"])
+                           u_max=p["speed_u_max"], u_min=p["speed_u_min"])
 
 
 def test_speed_pi_basic() -> None:
@@ -443,6 +444,28 @@ def test_speed_pi_stall_and_windup() -> None:
     check(n * 0.02 < 1.0, f"12. 速すぎるのに出力が下がるまで {n * 0.02:.2f}s かかった")
 
 
+def test_speed_pi_floor() -> None:
+    """12b. 前進中は min(u_min, u_ff) より下げない。下限に張り付いても負側に溜めない。
+
+    2026-10-19 の実走で、指令を追い越したあと中立の手前まで下げて止まりかけた。
+    """
+    sc = SpeedController(kp=0.15, ki=0.4, i_min=-0.15, i_max=0.3, u_max=0.7,
+                         u_min=0.25)
+    for _ in range(500):                                    # 大きく追い越したまま 10 秒
+        out = sc.update(v_cmd=0.5, v_meas=1.5, u_ff=0.33, dt=0.02)
+    check(abs(out.u - 0.25) < 1e-12, f"12b. 下限 0.25 で止まらない: {out.u}")
+    check(out.u_i > -0.15 + 1e-6,
+          f"12b. 下限に張り付いているのに負側へ積分し続けた: u_i={out.u_i}")
+    # 指令に戻ったら速やかに u_ff 付近へ戻る (負の積分を溜めていないので)
+    out = sc.update(v_cmd=0.5, v_meas=0.5, u_ff=0.33, dt=0.02)
+    check(out.u >= 0.25 and abs(out.u - (0.33 + out.u_i)) < 1e-12,
+          f"12b. 追いついた後の出力がおかしい: {out}")
+    # u_ff が下限より小さい指令では u_ff が下限
+    sc.reset()
+    out = sc.update(v_cmd=0.1, v_meas=1.0, u_ff=0.21, dt=0.02)
+    check(abs(out.u - 0.21) < 1e-12, f"12b. 小さい指令で u_ff より上に持ち上げた: {out.u}")
+
+
 def test_speed_pi_reset_and_nonfinite() -> None:
     """13. reset で積分を捨てる。NaN 入力は積分を捨てて u_ff だけ返す。"""
     sc = SpeedController(kp=0.15, ki=0.6, i_min=-0.4, i_max=0.3, u_max=0.8)
@@ -464,7 +487,7 @@ def test_speed_pi_reset_and_nonfinite() -> None:
 def test_speed_pi_validation() -> None:
     """14. 矛盾するゲイン・範囲は構築時に落とす。"""
     for kw in ({"kp": -0.1}, {"ki": -1.0}, {"i_min": 0.1}, {"i_max": -0.1},
-               {"u_max": 0.0}, {"u_max": 1.5}):
+               {"u_max": 0.0}, {"u_max": 1.5}, {"u_min": -0.1}, {"u_min": 0.8}):
         args = dict(kp=0.15, ki=0.6, i_min=-0.4, i_max=0.3, u_max=0.8)
         args.update(kw)
         try:
@@ -525,6 +548,7 @@ def main() -> int:
         ("10. PWM バックエンド", lambda: test_backend(core)),
         ("11. 速度 PI の向きと範囲", test_speed_pi_basic),
         ("12. 速度 PI の停止からの押し出しとワインドアップ", test_speed_pi_stall_and_windup),
+        ("12b. 速度 PI の出力下限", test_speed_pi_floor),
         ("13. 速度 PI の reset と非有限入力", test_speed_pi_reset_and_nonfinite),
         ("14. 速度 PI の設定検証", test_speed_pi_validation),
         ("15. 実設定の速度 PI の最悪出力", lambda: test_speed_pi_real_config(core)),

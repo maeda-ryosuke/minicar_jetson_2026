@@ -132,6 +132,7 @@ class MotorDriverNode(Node):
         self.declare_parameter("speed_i_min", -0.4)
         self.declare_parameter("speed_i_max", 0.3)
         self.declare_parameter("speed_u_max", 0.8)
+        self.declare_parameter("speed_u_min", 0.0)
 
         vp_path = str(self.get_parameter("vehicle_params_file").value)
         if not vp_path:
@@ -173,6 +174,7 @@ class MotorDriverNode(Node):
             i_min=float(self.get_parameter("speed_i_min").value),
             i_max=float(self.get_parameter("speed_i_max").value),
             u_max=float(self.get_parameter("speed_u_max").value),
+            u_min=float(self.get_parameter("speed_u_min").value),
         )
         self.odom_timeout = float(self.get_parameter("odom_timeout").value)
         self.meas_tau = float(self.get_parameter("speed_meas_tau").value)
@@ -247,7 +249,8 @@ class MotorDriverNode(Node):
             f"speed_control={self.speed_mode} "
             f"({self.get_parameter('odom_topic').value}, "
             f"kp={s.kp} ki={s.ki} i={s.i_min:+.2f}..{s.i_max:+.2f} "
-            f"u_max={s.u_max} -> カウント {self.core.to_count(s.u_max, 'throttle')})"
+            f"u={s.u_min}..{s.u_max} -> カウント "
+            f"{self.core.to_count(s.u_min, 'throttle')}..{self.core.to_count(s.u_max, 'throttle')})"
         )
         if self.backend.name == "dryrun":
             self.get_logger().warn(

@@ -370,7 +370,7 @@ class MotorDriverCore:
 class SpeedOutput:
     """1 周期ぶんの速度制御の出力。debug publish 用にすべての項を持つ。"""
 
-    u: float        # 最終スロットル u_t = u_ff + u_p + u_i を [0, u_max] でクランプ
+    u: float        # 最終スロットル u_t = u_ff + u_p + u_i を [下限, u_max] でクランプ
     u_ff: float     # フィードフォワード (throttle_map の値)
     u_p: float      # 比例項
     u_i: float      # 積分項
@@ -394,10 +394,18 @@ class SpeedController:
     積分項は止まっている間も誤差 (>= 0.5 m/s) を溜め続けるので、静止摩擦を
     越えるまで出力を上げて押し出す。
 
+    === 下限 u_min ===
+
+    実走 (2026-10-19) では、指令を追い越したあと PI が出力を中立の手前
+    (369〜370 カウント) まで下げ、ほぼ惰性で 0.3 m/s まで落ちてから
+    また押し上げる、を繰り返した (低速に落ちた場面の 66% が直前 1s 以内に
+    u < 0.25 まで下げていた)。前進中は min(u_min, u_ff) より下げない。
+    u_ff より上にはしないので、小さい指令に余計な力を足すことはない。
+
     === 安全側の設計 ===
 
-      - 出力は [0, u_max]。PI でブレーキ・後退は出さない (後退は従来どおり
-        後退シーケンス経由のオープンループ)
+      - 出力は [min(u_min, u_ff), u_max]。PI でブレーキ・後退は出さない
+        (後退は従来どおり後退シーケンス経由のオープンループ)
       - 積分項は [i_min, i_max] で頭打ち。/odom が壊れて 0 を返し続けても、
         出力は u_ff + kp*v_cmd + i_max までしか上がらない
       - 出力が上限 (または 0) に張り付いている間は、その向きへ積分しない
@@ -406,7 +414,7 @@ class SpeedController:
     """
 
     def __init__(self, kp: float, ki: float, i_min: float, i_max: float,
-                 u_max: float):
+                 u_max: float, u_min: float = 0.0):
         if kp < 0.0 or ki < 0.0:
             raise ValueError(f"speed_kp / speed_ki は 0 以上であること: {kp}, {ki}")
         if not (i_min <= 0.0 <= i_max):
@@ -414,9 +422,12 @@ class SpeedController:
                 f"speed_i_min <= 0 <= speed_i_max であること: {i_min}, {i_max}")
         if not (0.0 < u_max <= 1.0):
             raise ValueError(f"speed_u_max は (0, 1] であること: {u_max}")
+        if not (0.0 <= u_min < u_max):
+            raise ValueError(
+                f"0 <= speed_u_min < speed_u_max であること: {u_min}, {u_max}")
         self.kp, self.ki = float(kp), float(ki)
         self.i_min, self.i_max = float(i_min), float(i_max)
-        self.u_max = float(u_max)
+        self.u_min, self.u_max = float(u_min), float(u_max)
         self.u_i = 0.0
 
     def reset(self) -> None:
@@ -432,12 +443,13 @@ class SpeedController:
 
         e = v_cmd - v_meas
         u_p = self.kp * e
+        u_lo = max(0.0, min(self.u_min, u_ff))
         u_i = float(np.clip(self.u_i + self.ki * e * dt, self.i_min, self.i_max))
         u_raw = u_ff + u_p + u_i
         # 条件付き積分: 張り付いた向きへさらに溜めない。
-        if (u_raw > self.u_max and e > 0.0) or (u_raw < 0.0 and e < 0.0):
+        if (u_raw > self.u_max and e > 0.0) or (u_raw < u_lo and e < 0.0):
             u_i = self.u_i
             u_raw = u_ff + u_p + u_i
         self.u_i = u_i
-        u = float(np.clip(u_raw, 0.0, self.u_max))
+        u = float(np.clip(u_raw, u_lo, self.u_max))
         return SpeedOutput(u=u, u_ff=u_ff, u_p=u_p, u_i=u_i, error=e)
