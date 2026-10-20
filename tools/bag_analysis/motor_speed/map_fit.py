@@ -14,7 +14,7 @@ import numpy as np
 
 STOP, SPAN = 379, 49          # pwm_params.json の stop と stop - front
 MAP_V = [0.2, 0.8, 1.25, 1.54]
-MAP_U = [0.2122, 0.4571, 0.6408, 0.7592]   # motor_driver_params.yaml の前進側
+MAP_U = [0.30, 0.37, 0.47, 0.55]           # motor_driver_params.yaml の前進側 (10/20)
 
 name = sys.argv[1]
 ranges = [(float(a), float(b)) for a, b in zip(sys.argv[2::2], sys.argv[3::2])]
