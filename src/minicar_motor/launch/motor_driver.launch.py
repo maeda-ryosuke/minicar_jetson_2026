@@ -11,6 +11,9 @@
     ros2 launch minicar_motor motor_driver.launch.py \
         throttle_map_u:="[-0.5,-0.10,0.0,0.25,0.25,0.375,0.50,0.625]"
 
+    # 速度 PI を切って従来のオープンループで比べる（既定は yaml の値）
+    ros2 launch minicar_motor motor_driver.launch.py speed_control:=off
+
 raceline.launch.py と違い、backend の既定は fabo_pca9685（実機で PWM を出す）。
 単体で上げる用途はベンチと実走だけなので。**車輪を浮かせてから起動する。**
 
@@ -55,6 +58,9 @@ def _driver_node(context):
     throttle_u = LaunchConfiguration("throttle_map_u").perform(context).strip()
     if throttle_u:
         overrides["throttle_map_u"] = _parse_float_list("throttle_map_u", throttle_u)
+    speed_control = LaunchConfiguration("speed_control").perform(context).strip()
+    if speed_control:
+        overrides["speed_control"] = speed_control
 
     return [
         Node(
@@ -86,6 +92,8 @@ def generate_launch_description():
         DeclareLaunchArgument("backend", default_value="fabo_pca9685"),
         # 空なら yaml の値。例: "[-1.0,-1.0,0.0,1.0,1.0]"
         DeclareLaunchArgument("throttle_map_u", default_value=""),
+        # 空なら yaml の値。"off" / "pi"（速度 PI の A/B 比較用）
+        DeclareLaunchArgument("speed_control", default_value=""),
 
         OpaqueFunction(function=_driver_node),
     ])

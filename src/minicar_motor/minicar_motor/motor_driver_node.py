@@ -13,6 +13,11 @@ motor_driver_core.py (ROS 非依存)、PWM の書き込みは pwm_backend.py が
   2. ウォッチドッグ  指令が途切れたら中立を出し続ける
   3. アーミング   起動直後は中立を出し、ESC が中立を検出できるようにする
   4. 後退シーケンス ESC が後退に入るための 中立->中立->後退 (FaBo 準拠)
+  5. 速度 PI     前進中は /odom の実速度でスロットルを補正する (speed_control: "pi")
+
+5 が無いと、同じカウントでも負荷 (コーナー・つなぎ目・電池) で速度が変わり、
+止まっても出力が増えないので動き出せない (2026-10-16 の実走 bag で確認)。
+制御則は motor_driver_core.SpeedController。
 
 なぜ safety_node と分けるか: あちらは「車両運動の安全」(加速度制限・
 スタック脱出・上流の死活監視) を見ていて、制御方式に依存しない。
@@ -46,19 +51,30 @@ minicar_bringup の vehicle_params.yaml のパスを --ros-args で渡す。
 """
 
 import json
+import math
 
 import numpy as np
 import rclpy
 import yaml
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from std_msgs.msg import Float64, Float64MultiArray
 
-from minicar_motor.motor_driver_core import MotorConfig, MotorDriverCore
+from minicar_motor.motor_driver_core import (
+    MotorConfig, MotorDriverCore, SpeedController,
+)
 from minicar_motor.pwm_backend import make_backend
 
 REVERSE_MODES = ("neutral_neutral_reverse", "direct", "disabled")
+SPEED_CONTROL_MODES = ("off", "pi")
+
+# /motor/speed_ctrl の state 列
+SC_INACTIVE = 0.0     # off、または停止・後退中で PI を使っていない
+SC_ACTIVE = 1.0       # PI で補正している
+SC_ODOM_STALE = -1.0  # pi なのに /odom が来ていない。u_ff だけで出している
 
 
 class MotorDriverNode(Node):
@@ -104,6 +120,20 @@ class MotorDriverNode(Node):
         self.declare_parameter("throttle_map_v_mps", [-1.0, -0.001, 0.0, 0.001, 2.0])
         self.declare_parameter("throttle_map_u", [-0.5, -0.10, 0.0, 0.10, 0.5])
 
+        # 速度 PI。既定は off (従来どおりのオープンループ)。値の根拠は
+        # motor_driver_params.yaml。/odom は off でも購読し、/motor/speed_ctrl
+        # に実速度を流す (off と pi を同じ bag で比べられるように)。
+        self.declare_parameter("speed_control", "off")
+        self.declare_parameter("odom_topic", "/odom")
+        self.declare_parameter("odom_timeout", 0.2)
+        self.declare_parameter("speed_meas_tau", 0.05)
+        self.declare_parameter("speed_kp", 0.15)
+        self.declare_parameter("speed_ki", 0.6)
+        self.declare_parameter("speed_i_min", -0.4)
+        self.declare_parameter("speed_i_max", 0.3)
+        self.declare_parameter("speed_u_max", 0.8)
+        self.declare_parameter("speed_u_min", 0.0)
+
         vp_path = str(self.get_parameter("vehicle_params_file").value)
         if not vp_path:
             raise ValueError(
@@ -133,6 +163,26 @@ class MotorDriverNode(Node):
             raise ValueError(
                 f"reverse_mode は {REVERSE_MODES} のいずれか: {self.reverse_mode!r}")
 
+        # 綴りを間違えたら落とす。黙って off に落ちると「PI で走っているつもり」になる。
+        self.speed_mode = str(self.get_parameter("speed_control").value)
+        if self.speed_mode not in SPEED_CONTROL_MODES:
+            raise ValueError(
+                f"speed_control は {SPEED_CONTROL_MODES} のいずれか: {self.speed_mode!r}")
+        self.speed = SpeedController(
+            kp=float(self.get_parameter("speed_kp").value),
+            ki=float(self.get_parameter("speed_ki").value),
+            i_min=float(self.get_parameter("speed_i_min").value),
+            i_max=float(self.get_parameter("speed_i_max").value),
+            u_max=float(self.get_parameter("speed_u_max").value),
+            u_min=float(self.get_parameter("speed_u_min").value),
+        )
+        self.odom_timeout = float(self.get_parameter("odom_timeout").value)
+        self.meas_tau = float(self.get_parameter("speed_meas_tau").value)
+        if self.odom_timeout <= 0.0 or self.meas_tau < 0.0:
+            raise ValueError(
+                f"odom_timeout > 0, speed_meas_tau >= 0 であること: "
+                f"{self.odom_timeout}, {self.meas_tau}")
+
         self.dt = 1.0 / float(self.get_parameter("rate").value)
         self.timeout = float(self.get_parameter("cmd_timeout").value)
         self.arm_duration = float(self.get_parameter("arm_neutral_duration").value)
@@ -159,14 +209,25 @@ class MotorDriverNode(Node):
         self._start_time = self.get_clock().now()
         self._rev_state = "idle"    # "idle" / "gap1" / "gap2" / "engaged"
         self._rev_until = None
+        self._v_meas = None         # /odom の前進速度 (LPF 後) [m/s]
+        self._odom_time = None      # 受信時刻。header.stamp は micro-ROS の時刻同期に
+                                    # 依存するので使わない
 
         self.create_subscription(
             Twist, self.get_parameter("cmd_topic").value, self.on_cmd, 10)
+        # sensor_data (best effort) は reliable / best effort どちらの publisher とも
+        # つながる。micro-ROS の publisher が best effort でも黙って届かなくならない。
+        self.create_subscription(
+            Odometry, self.get_parameter("odom_topic").value, self.on_odom,
+            qos_profile_sensor_data)
         self.pub_delta = self.create_publisher(Float64, "/motor/steer_angle", 10)
         self.pub_u = self.create_publisher(
             Float64MultiArray, "/motor/cmd_normalized", 10)
         self.pub_count = self.create_publisher(
             Float64MultiArray, "/motor/pwm_count", 10)
+        # [v_cmd, v_meas, u_ff, u_p, u_i, u_out, state]。v_meas が無いときは NaN。
+        self.pub_speed = self.create_publisher(
+            Float64MultiArray, "/motor/speed_ctrl", 10)
         self.create_timer(self.dt, self.on_timer)
 
         c = self.cfg
@@ -182,6 +243,14 @@ class MotorDriverNode(Node):
             f"steer {c.steer_left}/{c.steer_center}/{c.steer_right} "
             f"throttle {c.throttle_back}/{c.throttle_stop}/{c.throttle_front} "
             f"(left/center/right, back/stop/front)"
+        )
+        s = self.speed
+        self.get_logger().info(
+            f"speed_control={self.speed_mode} "
+            f"({self.get_parameter('odom_topic').value}, "
+            f"kp={s.kp} ki={s.ki} i={s.i_min:+.2f}..{s.i_max:+.2f} "
+            f"u={s.u_min}..{s.u_max} -> カウント "
+            f"{self.core.to_count(s.u_min, 'throttle')}..{self.core.to_count(s.u_max, 'throttle')})"
         )
         if self.backend.name == "dryrun":
             self.get_logger().warn(
@@ -205,6 +274,28 @@ class MotorDriverNode(Node):
     def on_cmd(self, msg: Twist) -> None:
         self._cmd = (msg.linear.x, msg.angular.z)
         self._cmd_time = self.get_clock().now()
+
+    def on_odom(self, msg: Odometry) -> None:
+        """実速度を 1 次 LPF に通して保持する。
+
+        /odom (micro-ROS、車輪エンコーダ) は約 37Hz、分解能 0.026 m/s の階段状。
+        LPF は量子化の段差で P 項がばたつかない程度 (既定 0.05s) に留める。
+        遅らせすぎるとつなぎ目で止まったことに気付くのが遅れる。
+        """
+        v = float(msg.twist.twist.linear.x)
+        now = self.get_clock().now()
+        if not math.isfinite(v):
+            return
+        if self._v_meas is None or self._odom_time is None:
+            self._v_meas = v
+        else:
+            dt = (now - self._odom_time).nanoseconds * 1e-9
+            if dt > self.odom_timeout:
+                self._v_meas = v          # 途絶明けは古い値を引きずらない
+            elif dt > 0.0:
+                a = dt / (self.meas_tau + dt)
+                self._v_meas += a * (v - self._v_meas)
+        self._odom_time = now
 
     def _now_s(self) -> float:
         return self.get_clock().now().nanoseconds * 1e-9
@@ -254,6 +345,9 @@ class MotorDriverNode(Node):
         self._write(delta, 0.0)
         # 中立を挟んだので、次の後退要求はシーケンスをやり直す。
         self._rev_state = "idle"
+        # 積分も捨てる。止まっている間に溜めた分で、再開した瞬間に飛び出さない。
+        self.speed.reset()
+        self._publish_speed(0.0, 0.0, None, SC_INACTIVE)
 
     # ------------------------------------------------------------------
     def _throttle_u(self, v_cmd: float) -> float:
@@ -277,8 +371,10 @@ class MotorDriverNode(Node):
         """
         if v_cmd >= -self.cfg.v_eps:
             # 前進または停止。次の後退要求に備えて状態を戻す。
+            # [-v_eps, 0) の小さな負指令は 0 に丸める。素通しすると後退シーケンスを
+            # 踏まずに負の u が ESC へ出て、意図しないブレーキになる。
             self._rev_state = "idle"
-            return self.core.throttle_to_u(v_cmd)
+            return self.core.throttle_to_u(max(v_cmd, 0.0))
 
         if self.reverse_mode == "disabled":
             self.get_logger().warn(
@@ -311,6 +407,44 @@ class MotorDriverNode(Node):
             self.get_logger().info("後退シーケンス完了。後退指令を通す")
 
         return self.core.throttle_to_u(v_cmd)
+
+    # ------------------------------------------------------------------
+    def _odom_fresh(self) -> bool:
+        if self._v_meas is None or self._odom_time is None:
+            return False
+        age = (self.get_clock().now() - self._odom_time).nanoseconds * 1e-9
+        return age <= self.odom_timeout
+
+    def _speed_feedback(self, v_cmd: float, u_ff: float) -> float:
+        """前進中だけ PI で u_ff を補正する。使えないときは u_ff をそのまま返す。
+
+        PI を使わない場面 (off / 停止 / 後退 / 後退シーケンス中 / /odom 途絶) では
+        積分を捨てる。溜めたまま次の前進に持ち越すと、再開した瞬間に飛び出す。
+        """
+        forward = v_cmd > self.cfg.v_eps and self._rev_state == "idle"
+        if self.speed_mode == "off" or not forward:
+            self.speed.reset()
+            self._publish_speed(v_cmd, u_ff, None, SC_INACTIVE)
+            return u_ff
+        if not self._odom_fresh():
+            self.speed.reset()
+            self.get_logger().warn(
+                f"{self.get_parameter('odom_topic').value} が "
+                f"{self.odom_timeout}s 以上来ない。速度 PI を止めて throttle_map だけで出力",
+                throttle_duration_sec=1.0)
+            self._publish_speed(v_cmd, u_ff, None, SC_ODOM_STALE)
+            return u_ff
+        out = self.speed.update(v_cmd, self._v_meas, u_ff, self.dt)
+        self._publish_speed(v_cmd, u_ff, out, SC_ACTIVE)
+        return out.u
+
+    def _publish_speed(self, v_cmd: float, u_ff: float, out, state: float) -> None:
+        v_meas = self._v_meas if self._v_meas is not None else math.nan
+        if out is None:
+            data = [v_cmd, v_meas, u_ff, 0.0, 0.0, u_ff, state]
+        else:
+            data = [v_cmd, v_meas, out.u_ff, out.u_p, out.u_i, out.u, state]
+        self.pub_speed.publish(Float64MultiArray(data=[float(x) for x in data]))
 
     # ------------------------------------------------------------------
     def on_timer(self) -> None:
@@ -350,16 +484,19 @@ class MotorDriverNode(Node):
 
         # 4. 出力。舵はスルーレート制限、スロットルは後退シーケンス経由。
         #    中立ギャップ中だけは舵を保持する (切り返しの舵を崩さない)。
+        #    前進中はスロットルを速度 PI で補正する。
         u_t = self._throttle_u(out.v_cmd)
+        u_t = self._speed_feedback(out.v_cmd, u_t)
         in_gap = self._rev_state in ("gap1", "gap2")
         delta = self._delta if in_gap else self._slew(out.delta_rad)
         self._write(delta, u_t)
 
+        v_meas = f"{self._v_meas:+.2f}" if self._v_meas is not None else "  n/a"
         self.get_logger().info(
-            f"v={out.v_cmd:+.2f} delta={np.degrees(delta):+6.2f}deg "
+            f"v={out.v_cmd:+.2f} (実測 {v_meas}) delta={np.degrees(delta):+6.2f}deg "
             f"(飽和 {abs(delta) / self.cfg.delta_max * 100:3.0f}%) "
             f"u=[{self.core.steer_to_u(delta):+.2f}, {u_t:+.2f}] "
-            f"rev={self._rev_state}",
+            f"u_i={self.speed.u_i:+.3f} rev={self._rev_state}",
             throttle_duration_sec=1.0)
 
 
