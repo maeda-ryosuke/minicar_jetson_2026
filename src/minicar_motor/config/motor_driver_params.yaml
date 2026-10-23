@@ -214,7 +214,8 @@ motor_driver:
     #
     #   "off" — 従来どおり throttle_map をそのまま出す
     #   "pi"  — /odom の実速度で補正する。/odom が odom_timeout 来なければ
-    #           自動で off と同じ出力に戻る (/motor/speed_ctrl の state が -1)
+    #           自動で off と同じ出力に戻る (/motor/speed_ctrl の state が -1)。
+    #           odom_lost_stop 以上来なければ中立で止める (state が -2)
     #
     # launch 引数 speed_control:=off / pi で上書きできる (A/B 比較用)。
     speed_control: "pi"
@@ -225,6 +226,14 @@ motor_driver:
     # 実機で /odom の受信間隔は最大 0.229s あった (2026-10-19)。0.2 だと
     # そのたびに PI が止まって積分が捨てられるので、余裕を見て 0.3。
     odom_timeout: 0.3             # [s]
+    # pi で、一度来ていた /odom がこれ以上途絶えたら中立で止める (戻れば再開)。
+    # 0 で無効。/odom と /imu は同じ micro-ROS なので、止まると EKF も AMCL も
+    # 止まり、MPPI は止まった姿勢を見たまま指令を出し続ける。2026-10-23 は 2 回とも
+    # micro-ROS が途中で止まり、その後 throttle_map だけ・舵いっぱいで
+    # 80〜255 秒走り続けた (/motor/speed_ctrl の state -1 のまま)。
+    # 10/21 は 0.5〜2.7s の途絶が何度もあった。1s を超えるものはそこで一度止まる。
+    # 起動から一度も来ていないときは止めない (M5Stack なしのベンチ用)。
+    odom_lost_stop: 1.0           # [s]
     speed_meas_tau: 0.05          # [s] 実速度の LPF。量子化の段差をならすだけ
 
     # ゲインは机上シミュレーションで決めた。モデルは bag から作った

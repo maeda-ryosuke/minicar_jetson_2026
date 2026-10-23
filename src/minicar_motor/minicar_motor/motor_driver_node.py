@@ -75,6 +75,7 @@ SPEED_CONTROL_MODES = ("off", "pi")
 SC_INACTIVE = 0.0     # off、または停止・後退中で PI を使っていない
 SC_ACTIVE = 1.0       # PI で補正している
 SC_ODOM_STALE = -1.0  # pi なのに /odom が来ていない。u_ff だけで出している
+SC_ODOM_LOST = -2.0   # pi で /odom が odom_lost_stop 以上途絶えた。中立で止めている
 
 
 class MotorDriverNode(Node):
@@ -126,6 +127,7 @@ class MotorDriverNode(Node):
         self.declare_parameter("speed_control", "off")
         self.declare_parameter("odom_topic", "/odom")
         self.declare_parameter("odom_timeout", 0.2)
+        self.declare_parameter("odom_lost_stop", 1.0)
         self.declare_parameter("speed_meas_tau", 0.05)
         self.declare_parameter("speed_kp", 0.15)
         self.declare_parameter("speed_ki", 0.6)
@@ -177,11 +179,16 @@ class MotorDriverNode(Node):
             u_min=float(self.get_parameter("speed_u_min").value),
         )
         self.odom_timeout = float(self.get_parameter("odom_timeout").value)
+        self.odom_lost_stop = float(self.get_parameter("odom_lost_stop").value)
         self.meas_tau = float(self.get_parameter("speed_meas_tau").value)
         if self.odom_timeout <= 0.0 or self.meas_tau < 0.0:
             raise ValueError(
                 f"odom_timeout > 0, speed_meas_tau >= 0 であること: "
                 f"{self.odom_timeout}, {self.meas_tau}")
+        if 0.0 < self.odom_lost_stop < self.odom_timeout:
+            raise ValueError(
+                f"odom_lost_stop は 0 (無効) か odom_timeout 以上であること: "
+                f"{self.odom_lost_stop} < {self.odom_timeout}")
 
         self.dt = 1.0 / float(self.get_parameter("rate").value)
         self.timeout = float(self.get_parameter("cmd_timeout").value)
@@ -329,7 +336,7 @@ class MotorDriverNode(Node):
         self.pub_u.publish(Float64MultiArray(data=[float(u_s), float(u_t)]))
         self.pub_count.publish(Float64MultiArray(data=[float(c_s), float(c_t)]))
 
-    def neutral(self, center_steer: bool = True) -> None:
+    def neutral(self, center_steer: bool = True, state: float = SC_INACTIVE) -> None:
         """スロットルを中立にする。停止経路はすべてここを通る。
 
         中立を「出す」のであって「出すのを止める」のではない。サーボと ESC は
@@ -347,7 +354,7 @@ class MotorDriverNode(Node):
         self._rev_state = "idle"
         # 積分も捨てる。止まっている間に溜めた分で、再開した瞬間に飛び出さない。
         self.speed.reset()
-        self._publish_speed(0.0, 0.0, None, SC_INACTIVE)
+        self._publish_speed(0.0, 0.0, None, state)
 
     # ------------------------------------------------------------------
     def _throttle_u(self, v_cmd: float) -> float:
@@ -415,6 +422,24 @@ class MotorDriverNode(Node):
         age = (self.get_clock().now() - self._odom_time).nanoseconds * 1e-9
         return age <= self.odom_timeout
 
+    def _odom_lost(self) -> float:
+        """pi で、一度は来ていた /odom が odom_lost_stop 以上途絶えていれば、その秒数。
+
+        /odom と /imu は同じ micro-ROS (M5Stack) から来るので、/odom が止まると
+        EKF の odom->base_link も AMCL も止まる。MPPI は止まった姿勢を見たまま
+        指令を出し続けるので、ここで止めないと車は目隠しで走る
+        (2026-10-23 の実走で 2 回とも micro-ROS が途中で止まり、その後
+        舵いっぱい・throttle_map だけで 80〜255 秒走り続けた)。
+
+        起動から一度も来ていないときは対象外 (従来どおり throttle_map で出す)。
+        車輪を浮かせたベンチを M5Stack なしで回せるように。
+        """
+        if (self.speed_mode != "pi" or self.odom_lost_stop <= 0.0
+                or self._odom_time is None):
+            return 0.0
+        age = (self.get_clock().now() - self._odom_time).nanoseconds * 1e-9
+        return age if age > self.odom_lost_stop else 0.0
+
     def _speed_feedback(self, v_cmd: float, u_ff: float) -> float:
         """前進中だけ PI で u_ff を補正する。使えないときは u_ff をそのまま返す。
 
@@ -469,6 +494,17 @@ class MotorDriverNode(Node):
             self.neutral()
             self.get_logger().warn(
                 f"cmd stale ({age:.2f}s > {self.timeout}s)。中立を出力",
+                throttle_duration_sec=1.0)
+            return
+
+        # 2b. /odom 途絶。自己位置も止まっているので走らせない。戻れば再開する。
+        lost = self._odom_lost()
+        if lost > 0.0:
+            self.neutral(state=SC_ODOM_LOST)
+            self.get_logger().error(
+                f"{self.get_parameter('odom_topic').value} が {lost:.1f}s 来ない "
+                f"(> odom_lost_stop {self.odom_lost_stop}s)。自己位置も止まっているので"
+                f"中立で停止。micro_ros_agent と M5Stack を確認 (agent 起動後に M5Stack をリセット)",
                 throttle_duration_sec=1.0)
             return
 
