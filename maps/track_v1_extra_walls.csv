@@ -1,0 +1,7 @@
+# minicar_2026 の maps/course_walls.csv を track_v1 の map 座標へ載せ替えたもの。
+# 変換は minicar_2026/jetson_src/maps/raceline_track_v1.yaml と同じ剛体変換
+#   map = R(theta) * course + t,  theta -0.050944 rad, t (-5.7948, -0.8005)
+# SLAM 地図に写っていない壁。オレンジ物体(支柱21-24、壁列の一部)は
+# LiDAR にほとんど写らず、地図の中段の壁がそこで 1m ほど途切れている。
+name,x1,y1,x2,y2
+orange_block,0.0169,2.2202,2.1141,2.1132
