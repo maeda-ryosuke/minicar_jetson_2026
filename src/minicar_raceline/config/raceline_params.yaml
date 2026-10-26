@@ -36,7 +36,7 @@ raceline_manager:
 
     # FollowPath の再送周期[Hz]。controller_server は新しいゴールで経路を
     # 差し替えるだけなので、送り直しても制御はリセットされない。
-    feed_rate: 2.0
+    feed_rate: 10.0
 
     # 最近傍の探索窓[m]。全探索は蛇行コースで隣の通路の点へ吸着する。
     nearest_window: 2.0
