@@ -1,0 +1,13 @@
+# minicar_2026 の maps/surfaces.csv を track_v1 の map 座標へ載せ替えたもの。
+# 変換は minicar_2026/jetson_src/maps/raceline_track_v1.yaml と同じ剛体変換
+#   map = R(theta) * course + t,  theta -0.050944 rad, t (-5.7948, -0.8005)
+# 低ミューのマットだけ(人工芝・灰色領域は含めない)。
+name,i,x,y
+blue_mat,0,-4.7694,1.6354
+blue_mat,1,-3.9705,1.5947
+blue_mat,2,-3.8890,3.1926
+blue_mat,3,-4.6880,3.2334
+gray_mat,0,2.5456,2.9924
+gray_mat,1,3.5443,2.9415
+gray_mat,2,3.5952,3.9402
+gray_mat,3,2.5965,3.9911
