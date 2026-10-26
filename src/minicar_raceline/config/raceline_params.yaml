@@ -26,11 +26,13 @@ raceline_manager:
     #
     #   lookahead_m > prune_distance >= vx_max * time_steps * model_dt
     #
-    # vx_max 1.0 / 56 ステップ / 0.05s なら 4.0 > 3.0 >= 2.8 で満たす。
+    # MPPI は 40 ステップ / 0.1s = 4.0s 先まで見るので、vx_max 1.0 なら 4.0m 要る。
     # **vx_max を上げたら prune_distance と一緒にここも伸ばすこと。**
     # 足りないと経路の終点がホライゾンの内側に入り、PathFollowCritic が
     # 「終点で止まる」軌道を好むようになる。
-    lookahead_m: 4.0
+    # さらに再送の間(1/feed_rate 秒)に vx_max/feed_rate[m] 進むので、その分も上乗せする。
+    # 5.0 は速度を上げる前提で余裕を持たせた値(prune_distance は nav2 側で別途伸ばす)。
+    lookahead_m: 5.0
 
     # FollowPath の再送周期[Hz]。controller_server は新しいゴールで経路を
     # 差し替えるだけなので、送り直しても制御はリセットされない。
