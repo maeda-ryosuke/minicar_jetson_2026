@@ -32,8 +32,8 @@ relax_corners.py / balance_clearance.py で部分的に直したもの。
          + --w-over  * ∫max(0, |kappa| - 1/r_target)^2 ds
          + --w-clear * ∫max(0, clear_target - 壁距離)^2 ds  (広い所で壁から離す)
          + --w-near  * ∫max(0, clear_near - 壁距離)^2 ds    (狭い所で真ん中を通す)
-         + 1e6 * ∫max(0, clear_min - 壁距離)^2 ds          (壁余裕の下限)
-         + 1e6 * ∫max(0, マットまでの必要距離 - マット距離)^2 ds
+         + W_HARD * ∫max(0, clear_min - 壁距離)^2 ds       (壁余裕の下限)
+         + W_HARD * ∫max(0, マットまでの必要距離 - マット距離)^2 ds
 
    壁距離は SLAM 地図の占有セル(+ --extra-walls)までの距離なので、壁の端
    (支柱や板の角)もそのまま含まれる。clear_target は通路で取れる値より
@@ -90,6 +90,9 @@ from relax_corners import (  # noqa: E402
 # 水色は脇の通路に余裕があり、MPPI の横偏差でシムで乗り上げた実績がある。
 MAT_MARGIN = {"blue_mat": 0.18}
 MAT_MARGIN_DEFAULT = 0.03
+# 壁余裕の下限とマットの罰金の重み。1e6 だと --clear-target を大きくして
+# 真ん中へ寄せたとき、水色マットへ 1cm 食い込んだ。
+W_HARD = 1e7
 
 
 def read_csv_rows(path):
@@ -115,6 +118,30 @@ def add_walls(field, path):
         ok = (c >= 0) & (c < field.w) & (row >= 0) & (row < field.h)
         field.occ[row[ok], c[ok]] = True
     field.dist = ndimage.distance_transform_edt(~field.occ) * field.res
+
+
+def load_straights(path):
+    """[(線分 (2,2), pull), ...]。pull は線分の上へ引き寄せる重み(列が無ければ 0)。"""
+    return [(np.array([[float(r["x1"]), float(r["y1"])], [float(r["x2"]), float(r["y2"])]]),
+             float(r.get("pull") or 0.0))
+            for r in (read_csv_rows(path) if path else [])]
+
+
+def in_band(P, seg, half=0.6):
+    """線分の横 half[m] 以内で、両端の間にある点。"""
+    a, b = seg
+    e = b - a
+    L = np.linalg.norm(e)
+    t = (P - a) @ e / L ** 2
+    lat = np.abs((P - a) @ np.array([-e[1], e[0]]) / L)
+    return (t >= 0) & (t <= 1) & (lat <= half)
+
+
+def straight_mask(P, straights):
+    m = np.zeros(len(P), bool)
+    for seg, _ in straights:
+        m |= in_band(P, seg)
+    return m
 
 
 def periodic_basis(n, nc):
@@ -184,20 +211,25 @@ def objective(Q, a):
     # 下限は罰金なのでわずかに割る。解く側だけ 1cm 内側を狙う
     hard = np.maximum(0.0, a.clear_min + 0.01 - clr)
 
-    J = (a.w_k * np.sum(k * k * ds) + a.w_dk * np.sum((kn - k) ** 2) / h
+    wk = a.w_k + a.w_straight * a.mask           # 直線にしたい区間だけ曲率を重く
+    J = (np.sum(wk * k * k * ds) + a.w_dk * np.sum((kn - k) ** 2) / h
          + a.w_over * np.sum(over * over * ds)
-         + h * np.sum(a.w_clear * short ** 2 + a.w_near * near ** 2 + 1e6 * hard ** 2))
-    gQ = (-h * (2 * a.w_clear * short + 2 * a.w_near * near + 2e6 * hard))[:, None] * gclr
+         + h * np.sum(a.w_clear * short ** 2 + a.w_near * near ** 2 + W_HARD * hard ** 2))
+    gQ = (-h * (2 * a.w_clear * short + 2 * a.w_near * near + 2 * W_HARD * hard))[:, None] * gclr
+    for (p0, nrm, w), band in zip(a.pulls, a.pull_masks):
+        lat = (Q - p0) @ nrm                  # 線分の延長線からの符号付き横距離
+        J += w * h * np.sum(band * lat * lat)
+        gQ += (2 * w * h * band * lat)[:, None] * nrm[None]
     for p, need in a.mats:
         dm, gm = poly_dist_grad(Q, p)
         sm = np.maximum(0.0, need + 0.01 - dm)
-        J += 1e6 * h * np.sum(sm * sm)
-        gQ += (-2e6 * h * sm)[:, None] * gm
+        J += W_HARD * h * np.sum(sm * sm)
+        gQ += (-2 * W_HARD * h * sm)[:, None] * gm
 
     # J の k, ds についての偏微分
-    dJ_dk = (2 * a.w_k * k * ds + 2 * a.w_dk * ((k - kn) - (np.roll(k, 1) - k)) / h
+    dJ_dk = (2 * wk * k * ds + 2 * a.w_dk * ((k - kn) - (np.roll(k, 1) - k)) / h
              + 2 * a.w_over * over * np.sign(k) * ds)
-    dJ_dm = h * (a.w_k * k * k + a.w_over * over * over)
+    dJ_dm = h * (wk * k * k + a.w_over * over * over)
     # k = cr / m^3, m = |d1|
     u = d1 / m[:, None]
     dk_dd1 = np.c_[d2[:, 1], -d2[:, 0]] / (m ** 3)[:, None] - (3 * k / m)[:, None] * u
@@ -211,6 +243,9 @@ def objective(Q, a):
 
 
 def solve(C, a, nc):
+    # 区間に入る点は解く前の線で決めて固定する(解く途中で変わると目的関数が飛ぶ)
+    a.mask = straight_mask(C, a.straights).astype(float)
+    a.pull_masks = [in_band(C, seg).astype(float) for seg, w in a.straights if w > 0]
     t = tangents(C)
     nrm = np.c_[-t[:, 1], t[:, 0]]                          # 左向き法線
     B = periodic_basis(len(C), nc)
@@ -315,6 +350,13 @@ def main(argv=None):
                     help="地図に足す壁線 CSV (name,x1,y1,x2,y2 / map 座標)。'' で無し")
     ap.add_argument("--low-mu", default=os.path.join(ROOT, "maps/track_v1_low_mu.csv"),
                     help="踏まない領域の輪郭 CSV (name,i,x,y / map 座標)。'' で無し")
+    ap.add_argument("--straights", default="",
+                    help="直線にしたい区間 CSV (name,x1,y1,x2,y2[,pull] / map 座標)。既定は無し。"
+                         "pull > 0 の区間は線分の上へ引き寄せる")
+    ap.add_argument("--w-straight", type=float, default=1e4,
+                    help="--straights の区間で曲率の二乗積分に足す重み")
+    ap.add_argument("--allow-mat", action="append", default=[],
+                    help="踏んでよいマットの name(--low-mu の中から外す)。複数回指定可")
     ap.add_argument("--vehicle", default=os.path.join(
         ROOT, "src/minicar_bringup/config/vehicle_params.yaml"))
     ap.add_argument("--out", required=True)
@@ -353,9 +395,15 @@ def main(argv=None):
     wf = WallField(a.map, a.min_blob)
     add_walls(wf, a.extra_walls)
     a.field = Field(wf)
-    polys = load_polys(a.low_mu)
+    polys = {n: p for n, p in load_polys(a.low_mu).items() if n not in a.allow_mat}
     mats = {n: (p, hw + MAT_MARGIN.get(n, MAT_MARGIN_DEFAULT)) for n, p in polys.items()}
     a.mats = list(mats.values())
+    a.straights = load_straights(a.straights)
+    a.pulls = []
+    for (p0, p1), w in a.straights:
+        if w > 0:
+            e = (p1 - p0) / np.linalg.norm(p1 - p0)
+            a.pulls.append((p0, np.array([-e[1], e[0]]), w))
 
     _, x, y, _, _ = read_raceline_csv(a.raceline, closed=True)
     P0 = np.c_[x, y]

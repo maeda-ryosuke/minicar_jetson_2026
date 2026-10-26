@@ -97,6 +97,59 @@ SLAM 地図の壁から離しつつ **R 1.0m 以上**に引き直してある（
   通っても 0.28〜0.33m が上限（通路の形で決まる）。
 * スタート姿勢 (-0.09, 0.02) からは 0.31m 北を通る（修正前は 0.12m）。
 
+### センター寄せの線（2026-10-26）
+
+`raceline_smooth.csv` は R 1.0m を稼ぐためにヘアピンで外へ膨らみ、灰色マットを
+避けて外壁際を通っていた。舵の PWM 端点を広げて（500cb04）左右とも以前より切れる
+ようになったのと、灰色マットは実走で踏んでも安定していたので、通路の真ん中を
+通す線を **`maps/raceline_center.csv`** に別ファイルで置いた（smooth はそのまま）。
+
+```bash
+python tools/raceline/smooth_raceline.py --raceline maps/raceline_smooth.csv     --out maps/raceline_center.csv --allow-mat gray_mat --r-target 0.9     --clear-target 0.7 --w-clear 1e4 --w-dk 1000 --w-k 0.1
+```
+
+| | smooth | center |
+| --- | --- | --- |
+| 最小 R（0.25m で均した曲率） | 1.01m | 0.91m |
+| 曲率の変化の総量 | 10.4 | 10.9 |
+| 壁余裕の最小（車体中心） | 0.27m | 0.26m |
+| 壁余裕 0.40m 未満の長さ | 11.1m | 4.0m |
+| 周長 | 38.6m | 36.0m |
+
+* 灰色マットは踏む（`--allow-mat gray_mat`）。水色マットは従来どおり避ける。
+* 完全な中心線はヘアピンで R 0.62〜0.65m を要求し、r_min 0.83m では曲がれない。
+  R 0.9m を下限に、取れる範囲で真ん中へ寄せてある。
+* `vehicle_params.yaml` の r_min / MPPI の min_turning_r は 0.83m のまま、
+  `steer_map` も端点を広げる前の実測。舵が切れるようになった分を線や MPPI に
+  使うなら、r_min と steer_map を測り直す。
+
+### 通路を直線にした線（2026-10-26）
+
+`raceline_center.csv` を元に、下の通路（スタートを含む）・2 本目・3 本目の通路を
+直線にし、上の通路は北の板 7-8（分岐の仕切り、東端 x≈-0.7, y≈4.42）の 1.7m 手前で
+仕切りの下の通路の高さ（y≈4.08）に揃えた線を **`maps/raceline_straight.csv`** に
+置いた（center はそのまま）。center は北東ヘアピンの出口から仕切りの端へ斜めに
+寄っていき、実走で仕切りに当たることがあった。
+
+```bash
+python tools/raceline/smooth_raceline.py --raceline maps/raceline_center.csv     --out maps/raceline_straight.csv --allow-mat gray_mat --r-target 0.9     --clear-target 0.7 --w-clear 1e4 --w-dk 1000 --w-k 0.1     --straights maps/track_v1_straights.csv --w-straight 1e5
+```
+
+直線にする区間は `maps/track_v1_straights.csv`（map 座標の線分。`pull` 列が正の
+区間だけ線分の上へ引き寄せる）。
+
+| | center | straight |
+| --- | --- | --- |
+| 直線区間の最大曲率（下 / 2 本目 / 3 本目 / 上） | — | 0.03 / 0.12 / 0.09 / 0.10 |
+| 線の y：x=1.0（仕切りの 1.7m 手前）/ x=0 / x=-0.7（仕切りの東端） | 4.32 / 4.16 / 4.09 | 4.10 / 4.08 / 4.08 |
+| 最小 R（0.25m で均した曲率） | 0.91m | 0.91m |
+| 曲率の変化の総量 | 10.9 | 10.0 |
+| 壁余裕の最小（車体中心） | 0.26m | 0.26m |
+| 周長 | 36.0m | 36.9m |
+
+* 通路を直線にした分、西の大ループ（s 32 付近）と北東ヘアピンが少し外へ膨らむ。
+* 上の狭い通路（幅 0.6〜0.7m）の壁余裕は 0.26〜0.30m で、通路の幅で決まる上限。
+
 ## 導入
 
 ```bash
