@@ -65,7 +65,7 @@ controller_server:
       ay_max: 0.0
       az_max: 2.0
 
-      prune_distance: 5.0
+      prune_distance: 6.0
       max_robot_pose_search_dist: 2.0
       transform_tolerance: 0.20
       temperature: 0.3

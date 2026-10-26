@@ -32,7 +32,7 @@ raceline_manager:
     # 「終点で止まる」軌道を好むようになる。
     # さらに再送の間(1/feed_rate 秒)に vx_max/feed_rate[m] 進むので、その分も上乗せする。
     # 5.0 は速度を上げる前提で余裕を持たせた値(prune_distance は nav2 側で別途伸ばす)。
-    lookahead_m: 5.0
+    lookahead_m: 6.0
 
     # FollowPath の再送周期[Hz]。controller_server は新しいゴールで経路を
     # 差し替えるだけなので、送り直しても制御はリセットされない。
