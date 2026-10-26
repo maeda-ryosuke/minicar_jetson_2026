@@ -101,6 +101,10 @@ def test_raceline_horizon_and_plugin_ids_are_consistent():
 
     horizon_distance = mppi["vx_max"] * mppi["time_steps"] * mppi["model_dt"]
     assert manager["lookahead_m"] > mppi["prune_distance"] >= horizon_distance
+    # MPPI は costmap の外に出た点で経路を打ち切るので、半幅が prune_distance
+    # より短いとそこで経路が切れる。
+    costmap = nav2["local_costmap"]["local_costmap"]["ros__parameters"]
+    assert min(costmap["width"], costmap["height"]) / 2.0 > mppi["prune_distance"]
     assert manager["controller_id"] in server["controller_plugins"]
     assert manager["goal_checker_id"] in server["goal_checker_plugins"]
 

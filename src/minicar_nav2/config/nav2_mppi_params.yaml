@@ -162,8 +162,12 @@ local_costmap:
       global_frame: odom
       robot_base_frame: base_link
       rolling_window: true
-      width: 8
-      height: 8
+      # MPPI は経路を costmap の外に出た最初の点で打ち切る(Humble の
+      # PathHandler)。半幅は prune_distance より長くすること。8 のときは
+      # prune_distance 6.0 でも直線で 4 m 先までしか経路が残らなかった。
+      # グリッドは常に空なので広げても負荷はほぼ増えない。
+      width: 14
+      height: 14
       resolution: 0.05
       update_frequency: 10.0
       publish_frequency: 2.0
