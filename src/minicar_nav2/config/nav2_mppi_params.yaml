@@ -48,7 +48,7 @@ controller_server:
       # 続くので候補軌道が広く散らばり、急コーナーを曲がる候補が出やすい。
       # vx_max を上げるときは prune_distance >= vx_max * 4.0 と lookahead_m も伸ばす
       # (シムでは vx_max 1.0 / wz_max 2.2 / prune 4.5 / lookahead 5.5 で 4.1 cm)。
-      time_steps: 30
+      time_steps: 20
       model_dt: 0.1
       batch_size: 1000
       iteration_count: 1
@@ -56,7 +56,7 @@ controller_server:
       vy_std: 0.0
       wz_std: 0.30
       vx_max: 2.0
-      vx_min: 1.2
+      vx_min: 1.5
       vy_max: 0.0
       # 実際の旋回は AckermannConstraints(|wz| <= vx / min_turning_r)で決まる。
       wz_max: 3.0
@@ -106,7 +106,7 @@ controller_server:
       GoalCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 1.0
+        cost_weight: 1.5
         threshold_to_consider: 3.0
       GoalAngleCritic:
         enabled: true
