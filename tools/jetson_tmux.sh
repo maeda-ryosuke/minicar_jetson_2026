@@ -57,10 +57,11 @@ win ekf "ros2 launch kalmanfilter ekf.launch.py" run
 win loc "sleep 3; $X \"ros2 launch minicar_bringup slam_localization_amcl.launch.py initial_x:=0.0 initial_y:=0.0 initial_yaw:=0.0\"" run
 win nav2 "$X \"ros2 launch minicar_nav2 nav2_mppi.launch.py\"" run
 # /cmd_vel_raw -> /cmd_vel。motor_driver はこれの出力を受けるので、無いと走らない。
-# 止まったら (STALL) このウィンドウのログに reset のコマンドが出る。
+# 詰まったら後退して自動で復帰する。復帰をあきらめて止まったら、
+# このウィンドウのログに reset のコマンドが出る。
 win stall "$X \"ros2 launch minicar_safety stall_stop.launch.py\"" run
 # $(date ...) は Enter を押した時刻で展開させたいので、シングルクォートで \$ のまま送る。
-win bag "$X"' "ros2 bag record -o /bags/\$(date +%Y%m%d%H%M)_run /cmd_vel_raw /cmd_vel /safety/stall_stop /odom /odometry/filtered /motor/pwm_count /motor/cmd_normalized /motor/steer_angle /motor/speed_ctrl /rosout /amcl_pose /tf /tf_static"' wait
+win bag "$X"' "ros2 bag record -o /bags/\$(date +%Y%m%d%H%M)_run /cmd_vel_raw /cmd_vel /safety/stall_state /odom /odometry/filtered /motor/pwm_count /motor/cmd_normalized /motor/steer_angle /motor/speed_ctrl /rosout /amcl_pose /tf /tf_static"' wait
 win raceline "$X \"ros2 launch minicar_raceline raceline.launch.py\"" wait
 win motor "$X \"ros2 launch minicar_motor motor_driver.launch.py\"" wait
 win sh "" wait
