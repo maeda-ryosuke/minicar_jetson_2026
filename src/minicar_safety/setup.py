@@ -20,5 +20,9 @@ setup(
     description='Minicar safety package',
     license='TODO',
     tests_require=['pytest'],
-    entry_points={'console_scripts': ['safety_node = minicar_safety.safety_node:main']},
+    entry_points={'console_scripts': [
+        'safety_node = minicar_safety.safety_node:main',
+        # 実機用。指令ありで実速 0 が続いたら止める
+        'stall_stop_node = minicar_safety.stall_stop_node:main',
+    ]},
 )

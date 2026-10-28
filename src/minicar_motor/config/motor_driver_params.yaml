@@ -28,7 +28,11 @@ motor_driver:
     # 速くするのは、ウォッチドッグとスルーレート制限の粒度を細かくするため。
     rate: 50.0
 
-    cmd_topic: "/cmd_vel_raw"
+    # stall_stop_node (minicar_safety) の出力。controller_server の /cmd_vel_raw は
+    # stall_stop_node を通してから受ける。stall_stop_node を起動していないと
+    # 指令が来ず中立のまま (走らない側に倒れる)。
+    # motor_bench cmd は既定でここ (/cmd_vel) に出す。
+    cmd_topic: "/cmd_vel"
     # 下の 2 つは **launch が渡す**。ここは空のままにしておく。
     # 決め打ちにすると「別の諸元で走らせているつもりで既定を読んでいた」に
     # 気付けないので、ノード側は空だと起動時に落とす。
