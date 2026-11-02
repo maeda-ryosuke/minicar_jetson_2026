@@ -150,6 +150,32 @@ python tools/raceline/smooth_raceline.py --raceline maps/raceline_center.csv    
 * 通路を直線にした分、西の大ループ（s 32 付近）と北東ヘアピンが少し外へ膨らむ。
 * 上の狭い通路（幅 0.6〜0.7m）の壁余裕は 0.26〜0.30m で、通路の幅で決まる上限。
 
+### center のヘアピン出口だけを直線にした線（2026-10-28）
+
+straight は全周を解き直すので、ヘアピン（芝生のコーナー）の通り方まで center から
+変わる。center のまま、北東ヘアピンの出口から先だけを仕切りの下の通路の高さ
+（y=4.08）へ差し替えた線を **`maps/raceline_center_gate.csv`** に置いた。
+
+```bash
+python tools/raceline/splice_top_straight.py --raceline maps/raceline_center.csv     --out maps/raceline_center_gate.csv
+```
+
+center の向きが 180deg になる所（x=2.16, s≈21.4）から 1.8m（x）かけて y=4.08 へ
+移り、仕切りの西（x -0.3〜-1.2）で center へ戻す。
+
+| | center | center_gate |
+| --- | --- | --- |
+| 線の y：x=2.0 / 1.5 / 1.0 / 0 / -0.7 | 4.47 / 4.41 / 4.32 / 4.16 / 4.09 | 4.47 / 4.32 / 4.14 / 4.08 / 4.08 |
+| y=4.08±0.02 に入る x | -0.6 | 0.78 |
+| 書き換えた区間の最小 R | — | 1.30m |
+| 最小 R（全周、ヘアピン） | 0.91m | 0.91m |
+| 書き換えた区間の壁余裕の最小 | — | 0.33m |
+| 周長 | 36.0m | 35.9m |
+
+* center から 5mm 以上動いた点は上の通路の x -0.71〜1.91 だけ。ほかは取り直しの
+  誤差（1.3mm 以内）。
+* もっと早く寄せるなら `--length` を短くする（1.5 で x≈1.0、最小 R 約 1.0m）。
+
 ## 導入
 
 ```bash

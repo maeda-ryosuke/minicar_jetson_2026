@@ -16,7 +16,7 @@ controller_server:
     # を指令として出す。シムではシフト OFF の方が精度が良かった
     # (model_dt 0.05 のまま 20Hz->25Hz でシフトを切ると 11.9 -> 6.3 cm)。
     # 起動時に「Controller period is less then model dt」の WARN が出るが意図どおり。
-    controller_frequency: 20.0
+    controller_frequency: 30.0
     odom_topic: /odometry/filtered
     failure_tolerance: 0.3
     min_x_velocity_threshold: 0.001
