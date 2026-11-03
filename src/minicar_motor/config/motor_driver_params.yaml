@@ -69,16 +69,22 @@ motor_driver:
     # --- 後退の扱い ---
     # TT-02 系の ESC は前進から直接後退へ行けない。FaBo の 01_find_pwm.ipynb の
     # set_back は「中立 -> 0.1s -> 中立 -> 0.1s -> 後退」の順を踏んでいる。
-    # 負指令を素通しすると**ブレーキがかかるだけで下がらず**、safety_node の
-    # スタック脱出 (recovery_speed を負にして出す) が無言で効かなくなる。
+    # 負指令を素通しすると**ブレーキがかかるだけで下がらず**、stall_stop_node の
+    # 後退 (recovery_speed を負にして出す) が無言で効かなくなる。
     #
-    #   "neutral_neutral_reverse" — FaBo と同じ順を自動で踏む(既定)
+    #   "brake_neutral_reverse"   — 中立 -> 後退 (ブレーキ) -> 中立 -> 後退 (既定)
+    #   "neutral_neutral_reverse" — FaBo と同じ順 (中立 x2 -> 後退)
     #   "direct"                  — そのまま出す (後退直行に対応した ESC 用)
     #   "disabled"                — 負指令を 0 にクランプして警告
     #
-    # 実機で車輪を浮かせ、throttle に負値を入れて後退するか確かめてから決める。
+    # 実機の ESC はダブルタップ式 (2026-11-03、車輪を浮かせて確認)。前進のあとの
+    # 1 回目の後退信号はブレーキになり、中立を挟んだ 2 回目で初めて下がる。
+    # neutral_neutral_reverse では 1 回目のまま後退信号を出し続けるので、
+    # stall_stop の後退 1.5s がずっとブレーキで、一瞬下がりかけてまた前進、を
+    # 同じ場所で繰り返していた。
     neutral_gap_duration: 0.1     # [s] 挟む中立の長さ。FaBo の sleep(0.1) と同値
-    reverse_mode: "neutral_neutral_reverse"
+    reverse_brake_duration: 0.2   # [s] 1 回目の後退信号 (ブレーキ) の長さ
+    reverse_mode: "brake_neutral_reverse"
 
     # --- (B) 電気的仕様 ---
     # backend を綴り間違えると起動時に落ちる。既定へ黙って落とさないのは、

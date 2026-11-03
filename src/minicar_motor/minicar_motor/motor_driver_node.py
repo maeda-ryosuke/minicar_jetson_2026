@@ -68,7 +68,7 @@ from minicar_motor.motor_driver_core import (
 )
 from minicar_motor.pwm_backend import make_backend
 
-REVERSE_MODES = ("neutral_neutral_reverse", "direct", "disabled")
+REVERSE_MODES = ("brake_neutral_reverse", "neutral_neutral_reverse", "direct", "disabled")
 SPEED_CONTROL_MODES = ("off", "pi")
 
 # /motor/speed_ctrl の state 列
@@ -91,9 +91,11 @@ class MotorDriverNode(Node):
         self.declare_parameter("cmd_timeout", 0.3)
         self.declare_parameter("arm_neutral_duration", 2.0)
         self.declare_parameter("steer_slew_rate_max", 10.0)
-        self.declare_parameter("reverse_mode", "neutral_neutral_reverse")
+        self.declare_parameter("reverse_mode", "brake_neutral_reverse")
         # FaBo の time.sleep(0.1) に合わせる。中立を 2 回挟むので合計 0.2s。
         self.declare_parameter("neutral_gap_duration", 0.1)
+        # brake_neutral_reverse で 1 回目に出す後退信号 (ESC はブレーキと受け取る) の長さ。
+        self.declare_parameter("reverse_brake_duration", 0.2)
 
         self.declare_parameter("backend", "dryrun")
         self.declare_parameter("steering_channel", 0)
@@ -195,6 +197,7 @@ class MotorDriverNode(Node):
         self.arm_duration = float(self.get_parameter("arm_neutral_duration").value)
         self.slew_max = float(self.get_parameter("steer_slew_rate_max").value)
         self.gap_duration = float(self.get_parameter("neutral_gap_duration").value)
+        self.brake_duration = float(self.get_parameter("reverse_brake_duration").value)
         self.ch_steer = int(self.get_parameter("steering_channel").value)
         self.ch_throttle = int(self.get_parameter("throttle_channel").value)
 
@@ -214,7 +217,7 @@ class MotorDriverNode(Node):
         self._delta = 0.0           # 実際にサーボへ送っている舵角[rad]
         self._armed = False
         self._start_time = self.get_clock().now()
-        self._rev_state = "idle"    # "idle" / "gap1" / "gap2" / "engaged"
+        self._rev_state = "idle"    # "idle" / "gap1" / ("brake") / "gap2" / "engaged"
         self._rev_until = None
         self._v_meas = None         # /odom の前進速度 (LPF 後) [m/s]
         self._odom_time = None      # 受信時刻。header.stamp は micro-ROS の時刻同期に
@@ -360,7 +363,20 @@ class MotorDriverNode(Node):
     def _throttle_u(self, v_cmd: float) -> float:
         """速度指令 -> 正規化スロットル。後退シーケンスをここで踏む。
 
-        既定の "neutral_neutral_reverse" は **FaBo の実装をそのまま写したもの**。
+        既定の "brake_neutral_reverse" は
+
+            中立 (gap) -> 後退信号 (brake_duration) -> 中立 (gap) -> 後退
+
+        と、後退信号を 2 回出す (ダブルタップ)。実機の ESC は前進のあとの
+        1 回目の後退信号をブレーキとして受け取り、中立を挟んだ 2 回目で
+        初めて後退する。2026-11-03 に車輪を浮かせて確認した: 前進 -> 後退 は
+        止まるだけ、続けてもう一度後退を送ると下がった。
+        neutral_neutral_reverse のままだと 1 回目の後退信号がずっとブレーキで、
+        stall_stop_node の後退 (1.5s) が丸ごとブレーキになっていた。
+        前進していないときに 1 回目で後退が始まる ESC でも、brake_duration だけ
+        少し下がって中立に戻り、また下がるだけなので害はない。
+
+        "neutral_neutral_reverse" は **FaBo の実装をそのまま写したもの**。
         01_find_pwm.ipynb の set_back / check_back が後退へ入るとき
 
             set_channel_value(THROTTLE_CH, pwm_stop); time.sleep(0.1)
@@ -374,7 +390,8 @@ class MotorDriverNode(Node):
         無言で効かなくなる。ログにも異常が出ないので発見が遅れる。
 
         FaBo は「ブレーキとして逆方向信号を送る」段を持たない。以前ここに
-        あった brake 段はこちらの推測だったので削除した。
+        あった brake 段はこちらの推測で一度削除したが、上のとおり実機で
+        必要と分かったので brake_neutral_reverse として戻した。
         """
         if v_cmd >= -self.cfg.v_eps:
             # 前進または停止。次の後退要求に備えて状態を戻す。
@@ -392,18 +409,30 @@ class MotorDriverNode(Node):
         if self.reverse_mode == "direct":
             return self.core.throttle_to_u(v_cmd)
 
-        # --- neutral_neutral_reverse (FaBo 準拠) ---
+        # --- brake_neutral_reverse / neutral_neutral_reverse ---
+        tap = self.reverse_mode == "brake_neutral_reverse"
         now = self._now_s()
         if self._rev_state == "idle":
             self._rev_state = "gap1"
             self._rev_until = now + self.gap_duration
-            self.get_logger().info(
-                f"後退シーケンス開始 (v={v_cmd:+.2f}): "
-                f"中立 {self.gap_duration:.2f}s x2 -> 後退")
+            seq = (f"中立 {self.gap_duration:.2f}s -> 後退 (ブレーキ) "
+                   f"{self.brake_duration:.2f}s -> 中立 {self.gap_duration:.2f}s -> 後退"
+                   if tap else f"中立 {self.gap_duration:.2f}s x2 -> 後退")
+            self.get_logger().info(f"後退シーケンス開始 (v={v_cmd:+.2f}): {seq}")
 
         if self._rev_state == "gap1":
             if now < self._rev_until:
                 return 0.0
+            if tap:
+                self._rev_state = "brake"
+                self._rev_until = now + self.brake_duration
+            else:
+                self._rev_state = "gap2"
+                self._rev_until = now + self.gap_duration
+
+        if self._rev_state == "brake":
+            if now < self._rev_until:
+                return self.core.throttle_to_u(v_cmd)
             self._rev_state = "gap2"
             self._rev_until = now + self.gap_duration
 
@@ -523,7 +552,8 @@ class MotorDriverNode(Node):
         #    前進中はスロットルを速度 PI で補正する。
         u_t = self._throttle_u(out.v_cmd)
         u_t = self._speed_feedback(out.v_cmd, u_t)
-        in_gap = self._rev_state in ("gap1", "gap2")
+        # 後退シーケンスのブレーキ段も、中立ギャップと同じく舵を保持する。
+        in_gap = self._rev_state in ("gap1", "brake", "gap2")
         delta = self._delta if in_gap else self._slew(out.delta_rad)
         self._write(delta, u_t)
 

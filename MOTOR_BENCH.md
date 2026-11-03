@@ -205,13 +205,16 @@ ros2 run minicar_motor motor_bench cmd --vehicle-params-file $VP <引数>
 - `pwm_params.json` や `motor_driver_params.yaml` を直したら、**端末1 のドライバを
   Ctrl-C → 再起動**する
 
-**d（後退）について。** 既定の `reverse_mode: "neutral_neutral_reverse"` は FaBo の
-`set_back` と同じ「中立 → 0.1s → 中立 → 0.1s → 後退」を自動で踏む。TT-02 系の ESC は
-前進から直接後退へ行けないため。端末1 のログに
+**d（後退）について。** 既定の `reverse_mode: "brake_neutral_reverse"` は
+「中立 0.1s → 後退（ブレーキ）0.2s → 中立 0.1s → 後退」を自動で踏む。実機の ESC は
+ダブルタップ式で、前進のあとの 1 回目の後退信号はブレーキになるため
+（2026-11-03 に確認。FaBo の `set_back` と同じ `neutral_neutral_reverse` では
+前進 → 後退で止まるだけだった）。端末1 のログに
 `後退シーケンス開始` → `後退シーケンス完了` が出る。
 
 - **逆回転すれば既定のまま**
-- ブレーキがかかるだけで回らないなら、端末1 のドライバに
+- 前進のあとに後退を送ってブレーキだけで終わるなら、`reverse_brake_duration` を延ばす
+- それでも回らないなら、端末1 のドライバに
   `-p reverse_mode:=direct` を足して再起動して試す
 - どちらでもだめなら `disabled`。ただし `safety_node` のスタック脱出
   （`recovery_speed` を負にして出す）が効かなくなるので、その旨を

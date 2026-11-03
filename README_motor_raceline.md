@@ -292,8 +292,9 @@ FaBo の `notebooks/01_find_pwm.ipynb` で測り、出来た `pwm_params.json` �
 
 1. `i2cdetect -y -r 7` に `0x40` が出るか（**Orin Nano の I2C バスは 7**）
 2. サーボの可動端と `delta_max` の対応
-3. throttle に負値を入れて後退するか（既定 `reverse_mode` は FaBo の
-   `set_back` と同じ「中立 → 0.1s → 中立 → 0.1s → 後退」）
+3. throttle に負値を入れて後退するか（既定 `reverse_mode` は
+   「中立 → 後退（ブレーキ）→ 中立 → 後退」のダブルタップ。実機の ESC は
+   前進のあとの 1 回目の後退信号をブレーキと受け取る）
 
 **プロポ側が AI モードでないと車は動かない**（RC サーボマルチプレクサ）。
 逆に言えば暴走したらプロポで切れる。初通電のときは必ずプロポを手元に置く。
