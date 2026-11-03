@@ -7,6 +7,6 @@
   "pwm_speed": {
     "back": 400,
     "stop": 379,
-    "front": 250
+    "front": 330
   }
 }
