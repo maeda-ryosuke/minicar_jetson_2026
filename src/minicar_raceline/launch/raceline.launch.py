@@ -32,6 +32,9 @@ def generate_launch_description():
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         # 参照経路。既定は compose がバインドする /maps。
         DeclareLaunchArgument("raceline_file", default_value="/maps/raceline.csv"),
+        DeclareLaunchArgument(
+            "raceline_params_file",
+            default_value=str(raceline_share / "config" / "raceline_params.yaml")),
 
         Node(
             package="minicar_raceline",
@@ -39,7 +42,7 @@ def generate_launch_description():
             name="raceline_manager",
             output="screen",
             parameters=[
-                str(raceline_share / "config" / "raceline_params.yaml"),
+                LaunchConfiguration("raceline_params_file"),
                 {"raceline_file": LaunchConfiguration("raceline_file"),
                  "use_sim_time": sim_time},
             ],

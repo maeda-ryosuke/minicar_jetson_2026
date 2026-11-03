@@ -1,0 +1,45 @@
+# speed_zone ノードのパラメータ(実機)。
+#
+#   TF map->base_link -> [speed_zone] --SetParametersAtomically-->
+#       controller_server (FollowPath.vx_max / FollowPath.vx_min)
+#
+# 先頭キーは **実行時のノード名と一致必須**(合っていないと ROS はこのファイルを
+# 黙って無視する)。
+#
+# zone_mppi.launch.py は fast_* を controller_server の起動時の値にも使う。
+
+speed_zone:
+  ros__parameters:
+    # ヘアピン以外(直線・緩いコーナー)の速度帯 [m/s]。
+    fast_vx_max: 3.0
+    fast_vx_min: 2.5
+    # ヘアピン内の速度帯 [m/s]。
+    slow_vx_max: 2.0
+    slow_vx_min: 1.5
+
+    # 低速にする矩形。**座標系は map**。4 個ずつ [x_min, x_max, y_min, y_max]。
+    # 初期値は maps/raceline.csv の曲率から当たりを付けた値。RViz で
+    # /speed_zone/markers を地図に重ね、ヘアピンを覆って隣の通路にかからないよう
+    # 実走で詰めること。
+    slow_zones: [
+       2.2,  4.0, -0.8, 1.7,   # 南東ヘアピン (s≈2.5〜6.8)
+      -3.8, -2.5,  1.0, 3.5,   # 西ヘアピン   (s≈11.5〜15)
+       2.3,  4.2,  2.2, 4.8,   # 北東ヘアピン (s≈20〜24)
+    ]
+
+    # 進行方向にこの距離先の点が矩形に入ったら低速にする [m]。
+    # 3.0 -> 2.0 m/s を ax_min -2.0 で減速するのに (9 - 4) / (2 * 2) = 1.25 m。
+    # 現在位置か先読み点のどちらかが矩形内なら低速なので、抜け切るまで低速が続く。
+    preview_distance: 1.25
+
+    # 切り替えてからこの時間は戻さない [s]。境界でのばたつき防止。
+    # MPPI は vx_max / vx_min を変えるたびに Optimizer を reset する(制御列を
+    # ゼロに戻す)ので、短い周期で行き来させたくない。
+    min_hold_s: 0.5
+
+    rate_hz: 20.0
+    map_frame: "map"
+    base_frame: "base_link"
+    # nav2 の controller_server のノード名とコントローラ名。
+    controller_server: "/controller_server"
+    controller_id: "FollowPath"

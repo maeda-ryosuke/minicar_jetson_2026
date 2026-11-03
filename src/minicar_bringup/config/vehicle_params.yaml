@@ -25,7 +25,7 @@ vehicle:
 
 limits:
   v_min: -1.0               # [m/s] 後退あり。ただし後述の理由で通常は使わない
-  v_max: 2.0                # [m/s]
+  v_max: 5.0                # [m/s]
   a_max: 2.0                # [m/s^2] 加減速とも同値
   # 実機実測 (2026-10-10): 操舵を PWM 端 (pwm_params.json の left/right) まで
   # 切って円を描かせ、半径 0.83m。

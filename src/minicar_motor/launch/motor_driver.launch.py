@@ -46,7 +46,6 @@ def _parse_float_list(name: str, text: str) -> list:
 
 
 def _driver_node(context):
-    motor_share = Path(get_package_share_directory("minicar_motor"))
     sim_time = ParameterValue(LaunchConfiguration("use_sim_time"), value_type=bool)
 
     overrides = {
@@ -69,7 +68,7 @@ def _driver_node(context):
             name="motor_driver",
             output="screen",
             parameters=[
-                str(motor_share / "config" / "motor_driver_params.yaml"),
+                LaunchConfiguration("motor_params_file"),
                 overrides,
             ],
         ),
@@ -85,6 +84,9 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument("vehicle_params_file", default_value=vehicle),
+        DeclareLaunchArgument(
+            "motor_params_file",
+            default_value=str(motor_share / "config" / "motor_driver_params.yaml")),
         DeclareLaunchArgument(
             "pwm_params_file",
             default_value=str(motor_share / "config" / "pwm_params.json")),
