@@ -60,7 +60,7 @@ controller_server:
       vy_max: 0.0
       # 実際の旋回は AckermannConstraints(|wz| <= vx / min_turning_r)で決まる。
       wz_max: 3.0
-      ax_max: 2.0
+      ax_max: 1.0
       ax_min: -2.0
       ay_max: 0.0
       az_max: 2.0
