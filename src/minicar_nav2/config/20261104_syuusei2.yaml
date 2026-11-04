@@ -52,14 +52,14 @@ controller_server:
       model_dt: 0.1
       batch_size: 1000
       iteration_count: 1
-      vx_std: 0.5
+      vx_std: 0.3
       vy_std: 0.0
       wz_std: 0.25
       vx_max: 3.0
       vx_min: 2.0
       vy_max: 0.0
       # 実際の旋回は AckermannConstraints(|wz| <= vx / min_turning_r)で決まる。
-      wz_max: 3.0
+      wz_max: 5.0
       ax_max: 2.0
       ax_min: -2.0
       ay_max: 0.0
@@ -68,7 +68,7 @@ controller_server:
       prune_distance: 6.0
       max_robot_pose_search_dist: 2.0
       transform_tolerance: 0.20
-      temperature: 0.3
+      temperature: 0.2
       gamma: 0.015
       motion_model: "Ackermann"
       visualize: true
@@ -106,7 +106,7 @@ controller_server:
       GoalCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 2.0
+        cost_weight: 1.0
         threshold_to_consider: 3.0
       GoalAngleCritic:
         enabled: true
@@ -133,7 +133,7 @@ controller_server:
       PathFollowCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 5.0
+        cost_weight: 10
         offset_from_furthest: 5
         threshold_to_consider: 0.5
       PathAngleCritic:
