@@ -6,7 +6,7 @@
 
 import pytest
 
-from minicar_safety.stall_stop import PASS, RECOVER, STOP, StallConfig, StallDetector
+from minicar_safety.stall_stop import PASS, RECOVER, StallConfig, StallDetector
 
 DT = 0.05  # 指令の周期 (MPPI 20Hz)
 
@@ -57,32 +57,15 @@ def test_returns_to_pass_after_duration():
     assert det.mode == PASS and out is None
 
 
-def test_moving_forward_resets_count():
+def test_keeps_recovering_without_giving_up():
+    """後退しても前進できないまま続いても、停止せずに何度でも後退する。"""
     det = moving_detector()
     t = 1.0
-    for _ in range(5):
-        _, t = run(det, 0.5, 0.0, 1.1, t0=t)       # 詰まる
-        _, t = run(det, 0.5, -0.4, 1.5, t0=t)      # 後退
-        _, t = run(det, 0.5, 0.5, 0.5, t0=t)       # 抜けて前進できた
-        assert det.mode == PASS and det.recoveries == 0
-
-
-def test_stops_after_max_recoveries():
-    """後退しても前進できないまま続けば、あきらめて停止 (ラッチ)。"""
-    det = moving_detector()
-    t = 1.0
-    for _ in range(3):
-        _, t = run(det, 0.5, 0.0, 1.1, t0=t)
-        assert det.mode == RECOVER
+    for _ in range(10):
+        out, t = run(det, 0.5, 0.0, 1.1, t0=t)
+        assert det.mode == RECOVER and out[0] < 0
         _, t = run(det, 0.5, 0.0, 1.5, t0=t)       # 後退も効かない
-    out, t = run(det, 0.5, 0.0, 1.1, t0=t)
-    assert det.mode == STOP and out == (0.0, 0.0)
-    # 動き出しても指令をゼロにしても解除しない
-    out, _ = run(det, 0.0, 0.5, 1.0, t0=t)
-    assert out == (0.0, 0.0)
-    det.reset()
-    assert det.mode == PASS and not det.armed and det.recoveries == 0
-    assert det.update(0.5, 0.0, t + 2.0) is None
+        assert det.mode == PASS
 
 
 def test_not_armed_before_first_move():
@@ -97,9 +80,9 @@ def test_not_armed_before_first_move():
 
 
 def test_slow_but_moving_is_not_stall():
-    """芝生 (0.07 m/s まで落ちる) は止まっていない。"""
+    """芝生 (速度 PI kp 0.5 で最低 0.15 m/s) は止まっていない。"""
     det = moving_detector()
-    out, _ = run(det, 0.5, 0.052, 5.0, t0=1.0)
+    out, _ = run(det, 0.5, 0.104, 5.0, t0=1.0)     # 4 段
     assert out is None and det.mode == PASS
 
 
@@ -131,7 +114,7 @@ def test_odom_stale_no_trip():
 
 def test_invalid_config():
     with pytest.raises(ValueError):
-        StallDetector(StallConfig(arm_speed=0.02, speed_zero=0.03))
+        StallDetector(StallConfig(arm_speed=0.1, speed_zero=0.1))
     with pytest.raises(ValueError):
         StallDetector(StallConfig(stall_time=0.0))
     with pytest.raises(ValueError):
