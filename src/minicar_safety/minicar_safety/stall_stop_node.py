@@ -14,10 +14,8 @@
 壁に密着した車が前進しながら曲がるのは幾何的に無理なので、MPPI の指令を
 聞き続けても抜けられない。後退時は切り返しと同じく舵を逆に切る。
 
-後退しても前進できないまま max_recoveries 回続いたら、停止してラッチする。
-解除は reset サービス。解除しても、再び走り出すまでは判定しない。
-
-    ros2 service call /stall_stop_node/reset std_srvs/srv/Trigger
+後退しても抜けられなければ、また詰まった時点で何度でも後退する。
+あきらめて停止する機能は、かえって邪魔なので持たない。
 
 判定の中身は stall_stop.py。空転 (車輪は回っているが車体は止まっている)
 は検知しない。
@@ -40,12 +38,11 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from std_msgs.msg import String
-from std_srvs.srv import Trigger
 
-from minicar_safety.stall_stop import PASS, RECOVER, STOP, StallConfig, StallDetector
+from minicar_safety.stall_stop import PASS, RECOVER, StallConfig, StallDetector
 
 PARAMS = ("cmd_min", "speed_zero", "stall_time", "arm_speed", "odom_timeout",
-          "recovery_speed", "recovery_duration", "max_recoveries")
+          "recovery_speed", "recovery_duration")
 
 
 class StallStopNode(Node):
@@ -74,12 +71,11 @@ class StallStopNode(Node):
             qos_profile_sensor_data)
         self.pub = self.create_publisher(
             Twist, self.get_parameter("out_topic").value, 10)
-        # "pass" / "recover" / "stop"。transient local なので、あとから echo しても
+        # "pass" / "recover"。transient local なので、あとから echo しても
         # 今の状態が見える。
         self.pub_state = self.create_publisher(
             String, "/safety/stall_state",
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
-        self.create_service(Trigger, "~/reset", self.on_reset)
         self.pub_state.publish(String(data=PASS))
 
         c = self.det.cfg
@@ -88,7 +84,7 @@ class StallStopNode(Node):
             f"{self.get_parameter('out_topic').value}  "
             f"指令 > {c.cmd_min} m/s で実速 < {c.speed_zero} m/s が {c.stall_time}s 続いたら "
             f"{c.recovery_speed} m/s で {c.recovery_duration}s 後退 "
-            f"(続けて {c.max_recoveries} 回で停止。走り出して {c.arm_speed} m/s を超えるまでは判定しない)")
+            f"(走り出して {c.arm_speed} m/s を超えるまでは判定しない)")
 
     def _now(self) -> float:
         return self.get_clock().now().nanoseconds * 1e-9
@@ -114,9 +110,6 @@ class StallStopNode(Node):
 
         mode = self.det.mode
         if mode == before:
-            if mode == STOP:
-                self.get_logger().warn(
-                    "STALL で停止中 (reset サービスで解除)", throttle_duration_sec=2.0)
             return
         self.pub_state.publish(String(data=mode))
         c = self.det.cfg
@@ -124,25 +117,9 @@ class StallStopNode(Node):
             self.get_logger().error(
                 f"STALL: 指令 v={msg.linear.x:+.2f} omega={msg.angular.z:+.3f} なのに "
                 f"実速 {self.det.v_odom:+.3f} m/s が {c.stall_time}s 続いた。"
-                f"{c.recovery_duration}s 後退する (kappa {self.det.recover_kappa:+.2f}、"
-                f"{self.det.recoveries}/{c.max_recoveries} 回目)")
-        elif mode == STOP:
-            self.get_logger().error(
-                f"STALL: 後退を {c.max_recoveries} 回続けても前進できない。停止してラッチする。"
-                f"車を戻したら: ros2 service call {self.get_fully_qualified_name()}/reset "
-                f"std_srvs/srv/Trigger")
+                f"{c.recovery_duration}s 後退する (kappa {self.det.recover_kappa:+.2f})")
         elif mode == PASS:
             self.get_logger().info("後退を終了、素通しへ復帰")
-
-    def on_reset(self, request, response):
-        was = self.det.mode
-        self.det.reset()
-        self._armed_logged = False
-        self.pub_state.publish(String(data=PASS))
-        response.success = True
-        response.message = ("解除した" if was == STOP else f"{was} だった") + "。走り出すまで判定しない"
-        self.get_logger().info(f"reset: {response.message}")
-        return response
 
     def stop(self) -> None:
         self.pub.publish(Twist())
