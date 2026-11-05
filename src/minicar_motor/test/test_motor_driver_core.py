@@ -380,7 +380,7 @@ def load_speed_params() -> dict:
     """motor_driver_params.yaml の速度 PI の値。無ければノードの既定と同じ値。"""
     p = {"speed_kp": 0.15, "speed_ki": 0.6, "speed_i_min": -0.4,
          "speed_i_max": 0.3, "speed_u_max": 0.8, "speed_u_min": 0.0,
-         "speed_control": "off"}
+         "speed_kd": 0.0, "speed_d_tau": 0.2, "speed_control": "off"}
     md_path = os.path.join(CONFIG, "motor_driver_params.yaml")
     if os.path.exists(md_path):
         import yaml
@@ -390,10 +390,11 @@ def load_speed_params() -> dict:
     return p
 
 
-def make_speed(p: dict) -> SpeedController:
+def make_speed(p: dict, pid: bool = False) -> SpeedController:
     return SpeedController(kp=p["speed_kp"], ki=p["speed_ki"],
                            i_min=p["speed_i_min"], i_max=p["speed_i_max"],
-                           u_max=p["speed_u_max"], u_min=p["speed_u_min"])
+                           u_max=p["speed_u_max"], u_min=p["speed_u_min"],
+                           kd=p["speed_kd"] if pid else 0.0, d_tau=p["speed_d_tau"])
 
 
 def test_speed_pi_basic() -> None:
@@ -504,16 +505,17 @@ def test_speed_pi_real_config(core: MotorDriverCore) -> None:
     出力カウントは speed_u_max で頭打ちし、front を越えない。
     """
     p = load_speed_params()
-    check(p["speed_control"] in ("off", "pi"),
-          f"15. speed_control が off / pi でない: {p['speed_control']!r}")
-    sc = make_speed(p)
+    check(p["speed_control"] in ("off", "pi", "pid"),
+          f"15. speed_control が off / pi / pid でない: {p['speed_control']!r}")
     worst = 0.0
-    for v_cmd in np.linspace(core.cfg.v_eps * 1.01, core.cfg.v_max, 30):
-        sc.reset()
-        u_ff = core.throttle_to_u(v_cmd)
-        for _ in range(2000):
-            out = sc.update(v_cmd, 0.0, u_ff, 0.02)
-        worst = max(worst, out.u)
+    for pid in (False, True):
+        sc = make_speed(p, pid)
+        for v_cmd in np.linspace(core.cfg.v_eps * 1.01, core.cfg.v_max, 30):
+            sc.reset()
+            u_ff = core.throttle_to_u(v_cmd)
+            for _ in range(2000):
+                out = sc.update(v_cmd, 0.0, u_ff, 0.02)
+            worst = max(worst, out.u)
     c_worst = core.to_count(worst, "throttle")
     lo, hi = sorted((core.cfg.throttle_front, core.cfg.throttle_stop))
     check(lo <= c_worst <= hi,
@@ -521,6 +523,54 @@ def test_speed_pi_real_config(core: MotorDriverCore) -> None:
     check(worst <= p["speed_u_max"] + 1e-12, f"15. 最悪出力 u={worst} が u_max を超えた")
     print(f"  速度 PI の最悪出力 u={worst:.3f} = {c_worst} カウント "
           f"(kp={p['speed_kp']} ki={p['speed_ki']} i={p['speed_i_min']}..{p['speed_i_max']})")
+
+
+def test_speed_pid() -> None:
+    """16. PID の微分項: kd = 0 なら PI と同じ。実速度の変化に逆らい、指令の段差は拾わない。"""
+    pi_args = dict(kp=0.19, ki=0.152, i_min=-0.057, i_max=0.114, u_max=1.0, u_min=0.093)
+    rng = np.random.default_rng(0)
+    vc = rng.uniform(0.1, 2.0, 500)
+    vm = np.clip(vc + rng.normal(0, 0.3, 500), 0.0, None)
+    ff = rng.uniform(0.09, 0.8, 500)
+
+    # kd = 0 (speed_control: pi) は d_tau によらず、微分項なしの計算と一致する。
+    a = SpeedController(**pi_args)
+    b = SpeedController(**pi_args, kd=0.0, d_tau=0.01)
+    for k in range(500):
+        oa, ob = a.update(vc[k], vm[k], ff[k], 0.02), b.update(vc[k], vm[k], ff[k], 0.02)
+        check(oa == ob and oa.u_d == 0.0, f"16. kd=0 で PI と出力が違う (k={k}): {oa} {ob}")
+        if oa != ob:
+            break
+
+    # 減速中は押し (u_d > 0)、加速中は引く (u_d < 0)。
+    sc = SpeedController(**pi_args, kd=0.04, d_tau=0.1)
+    for k in range(50):
+        out = sc.update(0.5, 0.5 - 0.02 * k, 0.12, 0.02)
+    check(out.u_d > 0.0, f"16. 減速中に u_d が正でない: {out.u_d}")
+    sc.reset()
+    for k in range(50):
+        out = sc.update(0.5, 0.2 + 0.02 * k, 0.12, 0.02)
+    check(out.u_d < 0.0, f"16. 加速中に u_d が負でない: {out.u_d}")
+
+    # 実速度が一定なら、指令が段差で変わっても u_d は 0 (derivative kick なし)。
+    sc.reset()
+    for k in range(100):
+        out = sc.update(0.5 if k < 50 else 1.5, 0.6, 0.12, 0.02)
+        check(out.u_d == 0.0, f"16. 実速度一定なのに u_d が出た (k={k}): {out.u_d}")
+
+    # reset 後の 1 周期目は前の速度との差を微分しない。
+    sc.reset()
+    sc.update(0.5, 0.0, 0.12, 0.02)
+    sc.reset()
+    out = sc.update(0.5, 1.0, 0.12, 0.02)
+    check(out.u_d == 0.0, f"16. reset 直後に u_d が出た: {out.u_d}")
+
+    for kw in ({"kd": -0.01}, {"d_tau": -0.1}):
+        try:
+            SpeedController(**pi_args, **kw)
+            check(False, f"16. {kw} を受け付けた")
+        except ValueError:
+            pass
 
 
 def main() -> int:
@@ -551,7 +601,8 @@ def main() -> int:
         ("12b. 速度 PI の出力下限", test_speed_pi_floor),
         ("13. 速度 PI の reset と非有限入力", test_speed_pi_reset_and_nonfinite),
         ("14. 速度 PI の設定検証", test_speed_pi_validation),
-        ("15. 実設定の速度 PI の最悪出力", lambda: test_speed_pi_real_config(core)),
+        ("15. 実設定の速度 PI / PID の最悪出力", lambda: test_speed_pi_real_config(core)),
+        ("16. 速度 PID の微分項", test_speed_pid),
     ]
     for name, fn in tests:
         before = len(FAILURES)

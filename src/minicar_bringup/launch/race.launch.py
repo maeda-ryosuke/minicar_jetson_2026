@@ -24,6 +24,9 @@ yaml を直して再起動すれば docker build なしで反映される。
     # PWM を出さずに確かめる / 速度 PI を切る
     ros2 launch minicar_bringup race.launch.py backend:=dryrun speed_control:=off
 
+    # 速度制御を PI から PID (PI + 微分項) に替える
+    ros2 launch minicar_bringup race.launch.py speed_control:=pid
+
 **backend の既定は fabo_pca9685(PWM を出す)。** raceline_manager はすぐ FollowPath を
 送るので、車輪を浮かせるかプロポで止められる状態で起動する。
 raceline_mppi.launch.py / control.launch.py / 個別起動の各ノードと同時に起動しないこと。

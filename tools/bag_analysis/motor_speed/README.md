@@ -45,13 +45,16 @@ ROS は不要で、PC の Python（numpy）だけで動く。
 
 ## /motor/speed_ctrl の列
 
-`[v_cmd, v_meas, u_ff, u_p, u_i, u_out, state]`
+`[v_cmd, v_meas, u_ff, u_p, u_i, u_out, state, u_d]`
+
+u_d は `speed_control: pid` の微分項（2026-11-06 追加。pi / off では 0）。
+既存の列番号を変えないよう末尾に足したので、それより前の bag は 7 列のまま。
 
 state は次のいずれか。
 
 | 値 | 意味 |
 |---|---|
-| 1 | PI 動作中 |
+| 1 | PI（pid なら PID）動作中 |
 | 0 | 不使用（off、停止中、後退中） |
 | -1 | /odom 途絶のため、マップの値だけで出力している |
 | -2 | /odom が odom_lost_stop（1 s）以上途絶えたので、中立で止めている（2026-10-23 追加） |

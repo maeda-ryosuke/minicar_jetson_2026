@@ -14,6 +14,7 @@ motor_driver_core.py (ROS 非依存)、PWM の書き込みは pwm_backend.py が
   3. アーミング   起動直後は中立を出し、ESC が中立を検出できるようにする
   4. 後退シーケンス ESC が後退に入るための 中立->中立->後退 (FaBo 準拠)
   5. 速度 PI     前進中は /odom の実速度でスロットルを補正する (speed_control: "pi")
+                 "pid" は同じ PI に実速度の微分項を足したもの (A/B 比較用)
 
 5 が無いと、同じカウントでも負荷 (コーナー・つなぎ目・電池) で速度が変わり、
 止まっても出力が増えないので動き出せない (2026-10-16 の実走 bag で確認)。
@@ -69,13 +70,13 @@ from minicar_motor.motor_driver_core import (
 from minicar_motor.pwm_backend import make_backend
 
 REVERSE_MODES = ("brake_neutral_reverse", "neutral_neutral_reverse", "direct", "disabled")
-SPEED_CONTROL_MODES = ("off", "pi")
+SPEED_CONTROL_MODES = ("off", "pi", "pid")
 
 # /motor/speed_ctrl の state 列
 SC_INACTIVE = 0.0     # off、または停止・後退中で PI を使っていない
-SC_ACTIVE = 1.0       # PI で補正している
-SC_ODOM_STALE = -1.0  # pi なのに /odom が来ていない。u_ff だけで出している
-SC_ODOM_LOST = -2.0   # pi で /odom が odom_lost_stop 以上途絶えた。中立で止めている
+SC_ACTIVE = 1.0       # PI (pid なら PID) で補正している
+SC_ODOM_STALE = -1.0  # pi / pid なのに /odom が来ていない。u_ff だけで出している
+SC_ODOM_LOST = -2.0   # pi / pid で /odom が odom_lost_stop 以上途絶えた。中立で止めている
 
 
 class MotorDriverNode(Node):
@@ -137,6 +138,9 @@ class MotorDriverNode(Node):
         self.declare_parameter("speed_i_max", 0.3)
         self.declare_parameter("speed_u_max", 0.8)
         self.declare_parameter("speed_u_min", 0.0)
+        # 微分項。speed_control: "pid" のときだけ使う ("pi" では kd を 0 にして渡す)。
+        self.declare_parameter("speed_kd", 0.0)
+        self.declare_parameter("speed_d_tau", 0.2)
 
         vp_path = str(self.get_parameter("vehicle_params_file").value)
         if not vp_path:
@@ -172,6 +176,7 @@ class MotorDriverNode(Node):
         if self.speed_mode not in SPEED_CONTROL_MODES:
             raise ValueError(
                 f"speed_control は {SPEED_CONTROL_MODES} のいずれか: {self.speed_mode!r}")
+        # pi では speed_kd を読まない。yaml に kd を書いたままでも pi は今までと同じ出力。
         self.speed = SpeedController(
             kp=float(self.get_parameter("speed_kp").value),
             ki=float(self.get_parameter("speed_ki").value),
@@ -179,6 +184,9 @@ class MotorDriverNode(Node):
             i_max=float(self.get_parameter("speed_i_max").value),
             u_max=float(self.get_parameter("speed_u_max").value),
             u_min=float(self.get_parameter("speed_u_min").value),
+            kd=(float(self.get_parameter("speed_kd").value)
+                if self.speed_mode == "pid" else 0.0),
+            d_tau=float(self.get_parameter("speed_d_tau").value),
         )
         self.odom_timeout = float(self.get_parameter("odom_timeout").value)
         self.odom_lost_stop = float(self.get_parameter("odom_lost_stop").value)
@@ -235,7 +243,8 @@ class MotorDriverNode(Node):
             Float64MultiArray, "/motor/cmd_normalized", 10)
         self.pub_count = self.create_publisher(
             Float64MultiArray, "/motor/pwm_count", 10)
-        # [v_cmd, v_meas, u_ff, u_p, u_i, u_out, state]。v_meas が無いときは NaN。
+        # [v_cmd, v_meas, u_ff, u_p, u_i, u_out, state, u_d]。v_meas が無いときは NaN。
+        # u_d は pid で足した列。既存の解析スクリプトの列番号を変えないよう末尾に置く。
         self.pub_speed = self.create_publisher(
             Float64MultiArray, "/motor/speed_ctrl", 10)
         self.create_timer(self.dt, self.on_timer)
@@ -258,7 +267,8 @@ class MotorDriverNode(Node):
         self.get_logger().info(
             f"speed_control={self.speed_mode} "
             f"({self.get_parameter('odom_topic').value}, "
-            f"kp={s.kp} ki={s.ki} i={s.i_min:+.2f}..{s.i_max:+.2f} "
+            f"kp={s.kp} ki={s.ki} kd={s.kd} (d_tau={s.d_tau}) "
+            f"i={s.i_min:+.2f}..{s.i_max:+.2f} "
             f"u={s.u_min}..{s.u_max} -> カウント "
             f"{self.core.to_count(s.u_min, 'throttle')}..{self.core.to_count(s.u_max, 'throttle')})"
         )
@@ -452,7 +462,7 @@ class MotorDriverNode(Node):
         return age <= self.odom_timeout
 
     def _odom_lost(self) -> float:
-        """pi で、一度は来ていた /odom が odom_lost_stop 以上途絶えていれば、その秒数。
+        """pi / pid で、一度は来ていた /odom が odom_lost_stop 以上途絶えていれば、その秒数。
 
         /odom と /imu は同じ micro-ROS (M5Stack) から来るので、/odom が止まると
         EKF の odom->base_link も AMCL も止まる。MPPI は止まった姿勢を見たまま
@@ -463,7 +473,7 @@ class MotorDriverNode(Node):
         起動から一度も来ていないときは対象外 (従来どおり throttle_map で出す)。
         車輪を浮かせたベンチを M5Stack なしで回せるように。
         """
-        if (self.speed_mode != "pi" or self.odom_lost_stop <= 0.0
+        if (self.speed_mode == "off" or self.odom_lost_stop <= 0.0
                 or self._odom_time is None):
             return 0.0
         age = (self.get_clock().now() - self._odom_time).nanoseconds * 1e-9
@@ -495,9 +505,9 @@ class MotorDriverNode(Node):
     def _publish_speed(self, v_cmd: float, u_ff: float, out, state: float) -> None:
         v_meas = self._v_meas if self._v_meas is not None else math.nan
         if out is None:
-            data = [v_cmd, v_meas, u_ff, 0.0, 0.0, u_ff, state]
+            data = [v_cmd, v_meas, u_ff, 0.0, 0.0, u_ff, state, 0.0]
         else:
-            data = [v_cmd, v_meas, out.u_ff, out.u_p, out.u_i, out.u, state]
+            data = [v_cmd, v_meas, out.u_ff, out.u_p, out.u_i, out.u, state, out.u_d]
         self.pub_speed.publish(Float64MultiArray(data=[float(x) for x in data]))
 
     # ------------------------------------------------------------------

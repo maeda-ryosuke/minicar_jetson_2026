@@ -370,11 +370,12 @@ class MotorDriverCore:
 class SpeedOutput:
     """1 周期ぶんの速度制御の出力。debug publish 用にすべての項を持つ。"""
 
-    u: float        # 最終スロットル u_t = u_ff + u_p + u_i を [下限, u_max] でクランプ
+    u: float        # 最終スロットル u_t = u_ff + u_p + u_i + u_d を [下限, u_max] でクランプ
     u_ff: float     # フィードフォワード (throttle_map の値)
     u_p: float      # 比例項
     u_i: float      # 積分項
     error: float    # v_cmd - v_meas [m/s]
+    u_d: float = 0.0  # 微分項 (kd = 0 の PI では常に 0)
 
 
 class SpeedController:
@@ -411,12 +412,29 @@ class SpeedController:
       - 出力が上限 (または 0) に張り付いている間は、その向きへ積分しない
         (アンチワインドアップ)。解除した瞬間に溜めた分で飛び出さない
       - 停止指令・中立・/odom 途絶のたびに reset() で積分を捨てる (ノード側)
+
+    === 微分項 (kd > 0 のときだけ。speed_control: "pid") ===
+
+        u_d = -kd * d(v_meas)/dt   (時定数 d_tau の 1 次 LPF を通す)
+
+    誤差ではなく**実速度**を微分する。MPPI の指令は 20Hz で階段状に変わるので、
+    誤差を微分すると指令が変わるたびに u_d が跳ねる (derivative kick)。
+    実速度の微分なら、指令が一定のときは誤差の微分と同じで、指令の段差だけ拾わない。
+
+    効き方は「加速度に逆らう」。芝生の入口のように急に減速すると、P が誤差を
+    見て足すより先に押し出し、抜けた直後に急加速すると先に引く (追い越しを減らす)。
+    /odom は約 37Hz・0.026 m/s 刻みの階段なので、d_tau が小さいと段差のたびに
+    u_d が跳ねる。kd = 0 なら計算自体をしないので、PI と同じ出力になる。
     """
 
     def __init__(self, kp: float, ki: float, i_min: float, i_max: float,
-                 u_max: float, u_min: float = 0.0):
-        if kp < 0.0 or ki < 0.0:
-            raise ValueError(f"speed_kp / speed_ki は 0 以上であること: {kp}, {ki}")
+                 u_max: float, u_min: float = 0.0,
+                 kd: float = 0.0, d_tau: float = 0.1):
+        if kp < 0.0 or ki < 0.0 or kd < 0.0:
+            raise ValueError(
+                f"speed_kp / speed_ki / speed_kd は 0 以上であること: {kp}, {ki}, {kd}")
+        if d_tau < 0.0:
+            raise ValueError(f"speed_d_tau は 0 以上であること: {d_tau}")
         if not (i_min <= 0.0 <= i_max):
             raise ValueError(
                 f"speed_i_min <= 0 <= speed_i_max であること: {i_min}, {i_max}")
@@ -428,10 +446,15 @@ class SpeedController:
         self.kp, self.ki = float(kp), float(ki)
         self.i_min, self.i_max = float(i_min), float(i_max)
         self.u_min, self.u_max = float(u_min), float(u_max)
+        self.kd, self.d_tau = float(kd), float(d_tau)
         self.u_i = 0.0
+        self._v_prev = None     # 微分用。直前の v_meas
+        self._dv = 0.0          # LPF 後の d(v_meas)/dt [m/s^2]
 
     def reset(self) -> None:
         self.u_i = 0.0
+        self._v_prev = None
+        self._dv = 0.0
 
     def update(self, v_cmd: float, v_meas: float, u_ff: float,
                dt: float) -> SpeedOutput:
@@ -443,13 +466,21 @@ class SpeedController:
 
         e = v_cmd - v_meas
         u_p = self.kp * e
+        u_d = 0.0
+        if self.kd > 0.0:
+            # reset 直後の 1 周期目は微分できないので 0。
+            if self._v_prev is not None:
+                a = dt / (self.d_tau + dt)
+                self._dv += a * ((v_meas - self._v_prev) / dt - self._dv)
+            self._v_prev = v_meas
+            u_d = -self.kd * self._dv
         u_lo = max(0.0, min(self.u_min, u_ff))
         u_i = float(np.clip(self.u_i + self.ki * e * dt, self.i_min, self.i_max))
-        u_raw = u_ff + u_p + u_i
+        u_raw = u_ff + u_p + u_i + u_d
         # 条件付き積分: 張り付いた向きへさらに溜めない。
         if (u_raw > self.u_max and e > 0.0) or (u_raw < u_lo and e < 0.0):
             u_i = self.u_i
-            u_raw = u_ff + u_p + u_i
+            u_raw = u_ff + u_p + u_i + u_d
         self.u_i = u_i
         u = float(np.clip(u_raw, u_lo, self.u_max))
-        return SpeedOutput(u=u, u_ff=u_ff, u_p=u_p, u_i=u_i, error=e)
+        return SpeedOutput(u=u, u_ff=u_ff, u_p=u_p, u_i=u_i, error=e, u_d=u_d)
