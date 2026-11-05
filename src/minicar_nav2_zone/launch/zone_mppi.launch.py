@@ -18,6 +18,13 @@ slow_* へ、外で fast_* へ切り替える。
     ros2 launch minicar_nav2_zone zone_mppi.launch.py \\
       raceline_file:=/maps/raceline.csv
 
+nav2_params_file / speed_zone_params_file はファイル名だけなら、それぞれ
+minicar_nav2/config/ と minicar_nav2_zone/config/ の下を探す。
+
+use_safety:=false / use_raceline:=false で safety_node / raceline_manager を
+起動しない。停止検知と raceline を別に起動する launch(minicar_bringup の
+race_zone.launch.py)から include するときに使う。
+
 minicar_nav2 の raceline_mppi.launch.py / nav2_mppi.launch.py と同時に起動しないこと
 (controller_server が二重になる)。
 """
@@ -28,6 +35,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
                             LogInfo, OpaqueFunction)
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -37,25 +45,39 @@ import yaml
 from minicar_nav2.vehicle_limits import min_turning_radius
 
 
+def _resolve(context, name, package):
+    """launch 引数 name を実在するパスにする。ファイル名だけなら package の config/ を探す。"""
+    value = LaunchConfiguration(name).perform(context).strip()
+    if "/" not in value:
+        value = str(Path(get_package_share_directory(package)) / "config" / value)
+    if not Path(value).is_file():
+        raise FileNotFoundError(f"{name} が見つからない: {value}")
+    return value
+
+
 def _fast_band(speed_zone_params_file):
     with open(speed_zone_params_file) as f:
         p = yaml.safe_load(f)["speed_zone"]["ros__parameters"]
     return float(p["fast_vx_max"]), float(p["fast_vx_min"])
 
 
-def _controller_server(context):
+def _mppi_and_zone(context):
     """vehicle_params の旋回制約と speed_zone の fast 速度帯で controller_server を起動する。"""
+    nav2_params_file = _resolve(context, "nav2_params_file", "minicar_nav2")
+    zone_params_file = _resolve(context, "speed_zone_params_file", "minicar_nav2_zone")
     vehicle_params_file = LaunchConfiguration("vehicle_params_file").perform(context)
-    zone_params_file = LaunchConfiguration("speed_zone_params_file").perform(context)
     r_min = min_turning_radius(vehicle_params_file)
     vx_max, vx_min = _fast_band(zone_params_file)
     sim_time = ParameterValue(LaunchConfiguration("use_sim_time"), value_type=bool)
+    autostart = ParameterValue(LaunchConfiguration("autostart"), value_type=bool)
     visualize = LaunchConfiguration("visualize").perform(context).lower() == "true"
     trajectory_step = LaunchConfiguration("trajectory_step").perform(context)
     viz = {"visualize": visualize}
     if trajectory_step:
         viz["TrajectoryVisualizer"] = {"trajectory_step": int(trajectory_step)}
     return [
+        LogInfo(msg=f"MPPI params = {nav2_params_file}"),
+        LogInfo(msg=f"speed_zone params = {zone_params_file}"),
         LogInfo(msg=f"MPPI min_turning_r = {r_min:.3f} m "
                     f"(wheelbase / tan(delta_max), {vehicle_params_file})"),
         LogInfo(msg=f"MPPI 起動時の速度帯 vx {vx_min}..{vx_max} ({zone_params_file})"),
@@ -67,7 +89,7 @@ def _controller_server(context):
             name="controller_server",
             output="screen",
             parameters=[
-                LaunchConfiguration("nav2_params_file"),
+                nav2_params_file,
                 {"use_sim_time": sim_time},
                 # 後ろほど優先される。yaml の値より vehicle_params を正とする。
                 {"FollowPath": {"AckermannConstraints": {"min_turning_r": r_min}}},
@@ -75,8 +97,31 @@ def _controller_server(context):
                 {"FollowPath": {"vx_max": vx_max, "vx_min": vx_min}},
                 {"FollowPath": viz},
             ],
-            # safety_nodeだけが最終 /cmd_vel をpublishする。
+            # 停止検知フィルタ(safety_node か stall_stop_node)だけが最終 /cmd_vel を
+            # publishする。
             remappings=[("cmd_vel", "/cmd_vel_raw")],
+        ),
+        Node(
+            package="nav2_lifecycle_manager",
+            executable="lifecycle_manager",
+            name="lifecycle_manager_nav2_mppi",
+            output="screen",
+            parameters=[
+                nav2_params_file,
+                {"use_sim_time": sim_time,
+                 "autostart": autostart,
+                 "node_names": ["controller_server"]},
+            ],
+        ),
+        Node(
+            package="minicar_nav2_zone",
+            executable="speed_zone_node",
+            name="speed_zone",
+            output="screen",
+            parameters=[
+                zone_params_file,
+                {"use_sim_time": sim_time},
+            ],
         ),
     ]
 
@@ -94,12 +139,13 @@ def generate_launch_description():
     raceline_launch = str(raceline_share / "launch/raceline.launch.py")
 
     sim_time = ParameterValue(LaunchConfiguration("use_sim_time"), value_type=bool)
-    autostart = ParameterValue(LaunchConfiguration("autostart"), value_type=bool)
 
     return LaunchDescription([
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument("autostart", default_value="true"),
+        # ファイル名だけ(minicar_nav2/config/ の下)かフルパス。
         DeclareLaunchArgument("nav2_params_file", default_value=default_nav2_params),
+        # ファイル名だけ(minicar_nav2_zone/config/ の下)かフルパス。
         DeclareLaunchArgument(
             "speed_zone_params_file", default_value=default_zone_params),
         DeclareLaunchArgument(
@@ -111,20 +157,11 @@ def generate_launch_description():
         DeclareLaunchArgument("visualize", default_value="false"),
         # 空なら yaml の TrajectoryVisualizer.trajectory_step を使う。
         DeclareLaunchArgument("trajectory_step", default_value=""),
+        # 停止検知と raceline を別の launch で起動するときは false にする。
+        DeclareLaunchArgument("use_safety", default_value="true"),
+        DeclareLaunchArgument("use_raceline", default_value="true"),
 
-        OpaqueFunction(function=_controller_server),
-        Node(
-            package="nav2_lifecycle_manager",
-            executable="lifecycle_manager",
-            name="lifecycle_manager_nav2_mppi",
-            output="screen",
-            parameters=[
-                LaunchConfiguration("nav2_params_file"),
-                {"use_sim_time": sim_time,
-                 "autostart": autostart,
-                 "node_names": ["controller_server"]},
-            ],
-        ),
+        OpaqueFunction(function=_mppi_and_zone),
         Node(
             package="minicar_safety",
             executable="safety_node",
@@ -136,6 +173,7 @@ def generate_launch_description():
                  "imu_topic": "/imu/data",
                  "use_sim_time": sim_time},
             ],
+            condition=IfCondition(LaunchConfiguration("use_safety")),
         ),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(raceline_launch),
@@ -145,15 +183,6 @@ def generate_launch_description():
                 "raceline_file": LaunchConfiguration("raceline_file"),
                 "backend": LaunchConfiguration("backend"),
             }.items(),
-        ),
-        Node(
-            package="minicar_nav2_zone",
-            executable="speed_zone_node",
-            name="speed_zone",
-            output="screen",
-            parameters=[
-                LaunchConfiguration("speed_zone_params_file"),
-                {"use_sim_time": sim_time},
-            ],
+            condition=IfCondition(LaunchConfiguration("use_raceline")),
         ),
     ])

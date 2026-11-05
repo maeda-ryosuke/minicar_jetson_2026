@@ -38,13 +38,14 @@ services:
       # モータ校正値 (pwm_params.json, motor_driver_params.yaml) をホストの src と
       # 共有する。motor_bench の save がホストへ直接書き戻し、変更はドライバ再起動で反映。
       - ./src/minicar_motor/config:/ws/install/minicar_motor/share/minicar_motor/config:rw
-      # 走行系のパラメータ(AMCL・車両諸元・MPPI・raceline・stall_stop)もホストの src と
+      # 走行系のパラメータ(AMCL・車両諸元・MPPI・速度帯・raceline・stall_stop)もホストの src と
       # 共有する。yaml を直して launch を再起動すれば反映(docker build 不要)。
-      # 新しいファイルを足した場合も launch 引数で指定できる(race.launch.py)。
+      # 新しいファイルを足した場合も launch 引数で指定できる(race.launch.py / race_zone.launch.py)。
       - ./src/minicar_bringup/config:/ws/install/minicar_bringup/share/minicar_bringup/config:ro
       - ./src/minicar_nav2/config:/ws/install/minicar_nav2/share/minicar_nav2/config:ro
       - ./src/minicar_raceline/config:/ws/install/minicar_raceline/share/minicar_raceline/config:ro
       - ./src/minicar_safety/config:/ws/install/minicar_safety/share/minicar_safety/config:ro
+      - ./src/minicar_nav2_zone/config:/ws/install/minicar_nav2_zone/share/minicar_nav2_zone/config:ro
 
     # センサとその静的TFのみ自動起動。SLAM・MPPIは手動起動する。
     # D455 は ENABLE_CAMERA=true のときだけ起動する(camera_mount.yaml の実測設定が必要)。
