@@ -11,11 +11,11 @@
 speed_zone:
   ros__parameters:
     # ヘアピン以外(直線・緩いコーナー)の速度帯 [m/s]。
-    fast_vx_max: 3.0
+    fast_vx_max: 3.5
     fast_vx_min: 2.5
     # ヘアピン内の速度帯 [m/s]。
     slow_vx_max: 2.0
-    slow_vx_min: 1.5
+    slow_vx_min: 1.7
 
     # 低速にする矩形。**座標系は map**。4 個ずつ [x_min, x_max, y_min, y_max]。
     # 初期値は maps/raceline.csv の曲率から当たりを付けた値。RViz で
