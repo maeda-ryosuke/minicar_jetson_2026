@@ -55,7 +55,7 @@ controller_server:
       vx_std: 0.20
       vy_std: 0.0
       wz_std: 0.25
-      vx_max: 3.0
+      vx_max: 2.5
       vx_min: 1.7
       vy_max: 0.0
       # 実際の旋回は AckermannConstraints(|wz| <= vx / min_turning_r)で決まる。
