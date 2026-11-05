@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>レースライン描画</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --line: #d8dbe0; --text: #1f2328; --muted: #656d76;
+    --accent: #1f6feb; --ok: #1a7f37; --ng: #cf222e; --warn: #9a6700;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { display: flex; font: 13px/1.5 system-ui, "Segoe UI", "Yu Gothic UI", sans-serif;
+         color: var(--text); background: var(--bg); }
+  #side { width: 330px; flex: none; overflow-y: auto; background: var(--panel);
+          border-right: 1px solid var(--line); padding: 10px 14px 40px; }
+  #main { flex: 1; position: relative; min-width: 0; }
+  canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+  h1 { font-size: 15px; margin: 4px 0 8px; }
+  h2 { font-size: 12px; margin: 16px 0 6px; color: var(--muted); text-transform: none;
+       border-bottom: 1px solid var(--line); padding-bottom: 2px; }
+  button { font: inherit; padding: 4px 10px; border: 1px solid var(--line); border-radius: 5px;
+           background: #f6f8fa; cursor: pointer; }
+  button:hover { background: #eef1f4; }
+  button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent);
+                   width: 100%; padding: 7px; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 4px 0; }
+  .grid { display: grid; grid-template-columns: 1fr 86px; gap: 3px 8px; align-items: center; }
+  .grid input { width: 86px; }
+  input[type=number], input[type=text], select { font: inherit; padding: 2px 4px;
+           border: 1px solid var(--line); border-radius: 4px; }
+  .help { color: var(--muted); font-size: 12px; margin: 4px 0; }
+  .help kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line);
+              border-radius: 3px; padding: 0 3px; background: #f6f8fa; }
+  .hint { color: var(--muted); font-size: 11px; }
+  #checks div { margin: 1px 0; }
+  .ok { color: var(--ok); } .ng { color: var(--ng); } .warn { color: var(--warn); }
+  #stats { color: var(--muted); font-size: 12px; white-space: pre-line; }
+  #msg { margin-top: 6px; font-size: 12px; white-space: pre-line; word-break: break-all; }
+  #coord { position: absolute; right: 8px; bottom: 6px; background: rgba(255,255,255,.85);
+           padding: 1px 6px; border-radius: 4px; font: 12px ui-monospace, monospace; }
+  #toast { position: absolute; left: 50%; top: 10px; transform: translateX(-50%);
+           background: rgba(31,35,40,.88); color: #fff; padding: 4px 12px; border-radius: 5px;
+           display: none; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 6px; }
+  #overlays label { display: block; }
+</style>
+</head>
+<body>
+<div id="side">
+  <h1>レースライン描画</h1>
+
+  <h2>描く</h2>
+  <div class="row">
+    <button id="mPoint" class="on">点を打つ</button>
+    <button id="mFree">フリーハンド</button>
+  </div>
+  <div class="help">
+    点: クリックで追加(線の近くなら間に挿入)、ドラッグで移動、右クリックで削除。<br>
+    フリーハンド: ドラッグで 1 周描く(描き直すと置き換え)。描いたら点モードに戻る。<br>
+    点の順が走る向き(矢印)。始点と終点は自動でつながる。<br>
+    移動: 右ドラッグ / <kbd>Space</kbd>+ドラッグ / 中ボタン。拡大: ホイール。<kbd>F</kbd> 全体表示。<br>
+    <kbd>Ctrl</kbd>+<kbd>Z</kbd> 元に戻す / <kbd>Ctrl</kbd>+<kbd>Y</kbd> やり直し / <kbd>Delete</kbd> カーソル下の点を削除
+  </div>
+  <div class="row">
+    <button id="undo">元に戻す</button>
+    <button id="redo">やり直し</button>
+    <button id="reverse">逆向き</button>
+    <button id="clear">全部消す</button>
+  </div>
+  <div class="hint" id="nPts"></div>
+
+  <h2>既存の線</h2>
+  <div class="row">
+    <select id="lineSel"></select>
+    <span class="hint">間隔</span><input id="lineStep" type="number" value="0.8" step="0.1" min="0.2" style="width:52px"><span class="hint">m</span>
+  </div>
+  <div class="row"><button id="loadLine">点にして読み込む</button></div>
+  <div class="hint">重ねて表示:</div>
+  <div id="overlays"></div>
+
+  <h2>パラメータ</h2>
+  <div class="grid">
+    <label for="p_w_stay">描いた線への追従 w_stay</label><input id="p_w_stay" type="number" step="any">
+    <label for="p_w_dk">なめらかさ w_dk</label><input id="p_w_dk" type="number" step="any">
+    <label for="p_r_target">最小半径 r_target [m]</label><input id="p_r_target" type="number" step="0.05">
+    <label for="p_wall_margin">壁余裕 下限 = 半幅 + [m]</label><input id="p_wall_margin" type="number" step="0.01">
+    <label for="p_clear_near">狭い所で押し返す距離 [m]</label><input id="p_clear_near" type="number" step="0.01">
+  </div>
+  <div class="hint">w_stay を上げると描いた線に忠実(R を割りやすい)。下げると丸くなる。<br>
+    w_dk を上げるとくねりが減り、コーナーの入りが緩やかになる。</div>
+  <details>
+    <summary>詳細</summary>
+    <div class="grid" style="margin-top:4px">
+      <label for="p_w_clear">広い所で壁から離す w_clear</label><input id="p_w_clear" type="number" step="any">
+      <label for="p_clear_target">その目標距離 [m]</label><input id="p_clear_target" type="number" step="0.01">
+      <label for="p_w_k">曲率の二乗 w_k</label><input id="p_w_k" type="number" step="any">
+      <label for="p_knot">B スプライン節点間隔 [m]</label><input id="p_knot" type="number" step="0.05">
+      <label for="p_passes">パス数</label><input id="p_passes" type="number" step="1" min="1">
+    </div>
+    <div class="row"><button id="resetPrm">初期値に戻す</button></div>
+  </details>
+  <div class="hint" style="margin-top:6px">避けるマット:</div>
+  <div id="mats"></div>
+
+  <h2>きれいにする</h2>
+  <button id="opt" class="primary">きれいにする</button>
+  <div id="optStatus" class="hint"></div>
+  <div id="checks"></div>
+  <div id="stats"></div>
+  <div class="row">
+    <span class="hint">色:</span>
+    <label><input type="radio" name="colorBy" value="clr" checked> 壁余裕</label>
+    <label><input type="radio" name="colorBy" value="kappa"> 曲率</label>
+  </div>
+  <div class="hint" id="legend"></div>
+
+  <h2>保存</h2>
+  <div class="row">
+    <span>maps/</span><input id="saveName" type="text" value="raceline_draw1" style="width:150px"><span>.csv</span>
+  </div>
+  <div class="row"><button id="save">保存</button></div>
+  <div id="msg"></div>
+</div>
+
+<div id="main">
+  <canvas id="cv"></canvas>
+  <div id="coord"></div>
+  <div id="toast"></div>
+</div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const cv = $("#cv"), ctx = cv.getContext("2d");
+const PRM = ["w_stay", "w_dk", "r_target", "wall_margin", "clear_near",
+             "w_clear", "clear_target", "w_k", "knot", "passes"];
+const OVERLAY_COLORS = ["#8250df", "#bf3989", "#0a7ea4", "#953800", "#57606a", "#6639ba"];
+
+let M = null;                 // /api/init
+const img = new Image();
+const view = { s: 1, x: 0, y: 0 };   // 画面[px] = 画素 * s + (x, y)
+let ctrl = [];                // 描いた点 [[x, y], ...] (map 座標)
+let hist = [], fut = [];
+let result = null, stale = false;
+let overlays = {};            // name -> [[x, y], ...]
+let mode = "point";
+let drag = null;
+let hover = -1;
+let spaceDown = false;
+let preview = { pts: [], seg: [] };
+let mouse = null;
+
+// ---------------------------------------------------------------- 座標
+function m2s(x, y) {
+  const c = (x - M.ox) / M.res + 0.5, r = M.h - 1 - (y - M.oy) / M.res + 0.5;
+  return [c * view.s + view.x, r * view.s + view.y];
+}
+function s2m(sx, sy) {
+  const c = (sx - view.x) / view.s - 0.5, r = (sy - view.y) / view.s - 0.5;
+  return [c * M.res + M.ox, (M.h - 1 - r) * M.res + M.oy];
+}
+function fit() {
+  const W = cv.clientWidth, H = cv.clientHeight;
+  view.s = Math.min(W / M.w, H / M.h) * 0.96;
+  view.x = (W - M.w * view.s) / 2;
+  view.y = (H - M.h * view.s) / 2;
+}
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(cv.clientWidth * dpr);
+  cv.height = Math.round(cv.clientHeight * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+
+// ---------------------------------------------------------------- 線
+// 閉じた centripetal Catmull-Rom。サーバ側は周期 3 次スプラインなので形はわずかに違う
+// (解いた後はサーバの種を破線で出す)。
+function crSeg(p0, p1, p2, p3, n) {
+  const d = (p, q) => Math.pow(Math.hypot(q[0] - p[0], q[1] - p[1]) || 1e-6, 0.5);
+  const t0 = 0, t1 = t0 + d(p0, p1), t2 = t1 + d(p1, p2), t3 = t2 + d(p2, p3);
+  const L = (A, B, ta, tb, t) => {
+    const u = (t - ta) / (tb - ta);
+    return [A[0] + (B[0] - A[0]) * u, A[1] + (B[1] - A[1]) * u];
+  };
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    const t = t1 + (t2 - t1) * k / n;
+    const A1 = L(p0, p1, t0, t1, t), A2 = L(p1, p2, t1, t2, t), A3 = L(p2, p3, t2, t3, t);
+    const B1 = L(A1, A2, t0, t2, t), B2 = L(A2, A3, t1, t3, t);
+    out.push(L(B1, B2, t1, t2, t));
+  }
+  return out;
+}
+function updatePreview() {
+  const n = ctrl.length, pts = [], seg = [];
+  if (n >= 3) {
+    for (let i = 0; i < n; i++) {
+      const p0 = ctrl[(i - 1 + n) % n], p1 = ctrl[i], p2 = ctrl[(i + 1) % n], p3 = ctrl[(i + 2) % n];
+      const len = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+      for (const q of crSeg(p0, p1, p2, p3, Math.max(2, Math.ceil(len / 0.05)))) {
+        pts.push(q); seg.push(i);
+      }
+    }
+  } else {
+    for (let i = 0; i < n; i++) { pts.push(ctrl[i]); seg.push(i); }
+  }
+  preview = { pts, seg };
+}
+
+function setCtrl(next, keepHist) {
+  if (!keepHist) { hist.push(JSON.stringify(ctrl)); fut = []; if (hist.length > 200) hist.shift(); }
+  ctrl = next;
+  changed();
+}
+function changed(markStale = true) {
+  if (result && markStale) stale = true;
+  updatePreview();
+  try { localStorage.setItem("draw_raceline_ctrl", JSON.stringify(ctrl)); } catch (e) {}
+  $("#nPts").textContent = `点 ${ctrl.length} 個` + (result && stale ? "(結果は描き直す前のもの)" : "");
+  draw();
+}
+function undo() {
+  if (!hist.length) return;
+  fut.push(JSON.stringify(ctrl)); ctrl = JSON.parse(hist.pop()); changed();
+}
+function redoFn() {
+  if (!fut.length) return;
+  hist.push(JSON.stringify(ctrl)); ctrl = JSON.parse(fut.pop()); changed();
+}
+
+// 弧長 step ごとに間引く(始点は残す)
+function decimate(P, step) {
+  if (P.length < 2) return P.slice();
+  const out = [P[0]];
+  let acc = 0;
+  for (let i = 1; i < P.length; i++) {
+    acc += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]);
+    if (acc >= step) { out.push(P[i]); acc = 0; }
+  }
+  // 終点が始点に近すぎると、閉じたときに折り返しができる
+  while (out.length > 3) {
+    const a = out[out.length - 1];
+    if (Math.hypot(a[0] - out[0][0], a[1] - out[0][1]) < step * 0.5) out.pop(); else break;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- 当たり判定
+function hitPoint(sx, sy) {
+  let best = -1, bd = 9;
+  ctrl.forEach((p, i) => {
+    const [x, y] = m2s(p[0], p[1]);
+    const d = Math.hypot(x - sx, y - sy);
+    if (d < bd) { bd = d; best = i; }
+  });
+  return best;
+}
+function hitSegment(sx, sy) {
+  const P = preview.pts, n = P.length;
+  if (ctrl.length < 3) return -1;
+  let best = -1, bd = 8;
+  for (let k = 0; k < n; k++) {
+    const [ax, ay] = m2s(...P[k]), [bx, by] = m2s(...P[(k + 1) % n]);
+    const ex = bx - ax, ey = by - ay, L2 = ex * ex + ey * ey || 1e-9;
+    const t = Math.max(0, Math.min(1, ((sx - ax) * ex + (sy - ay) * ey) / L2));
+    const d = Math.hypot(sx - ax - t * ex, sy - ay - t * ey);
+    if (d < bd) { bd = d; best = preview.seg[k]; }
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------- 描画
+function polyline(P, closed) {
+  ctx.beginPath();
+  P.forEach((p, i) => { const [x, y] = m2s(p[0], p[1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  if (closed) ctx.closePath();
+}
+function arrow(p, q, color, size) {
+  const [ax, ay] = m2s(...p), [bx, by] = m2s(...q);
+  const a = Math.atan2(by - ay, bx - ax);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(bx + size * Math.cos(a), by + size * Math.sin(a));
+  ctx.lineTo(bx + size * Math.cos(a + 2.5), by + size * Math.sin(a + 2.5));
+  ctx.lineTo(bx + size * Math.cos(a - 2.5), by + size * Math.sin(a - 2.5));
+  ctx.closePath(); ctx.fill();
+}
+function colorClr(c) {
+  if (c < result.clear_min + 0.02) return "#cf222e";
+  if (c < result.clear_min + 0.08) return "#d4760b";
+  return "#1a7f37";
+}
+function colorKappa(k) {
+  const t = Math.abs(k) / result.k_lim;
+  if (t > 1.0) return "#c000c0";
+  const h = 120 * (1 - t);                  // 緑 -> 黄 -> 赤
+  return `hsl(${h}, 80%, 40%)`;
+}
+function avoidSet() {
+  return [...document.querySelectorAll("#mats input:checked")].map(e => e.value);
+}
+
+function draw() {
+  const W = cv.clientWidth, H = cv.clientHeight;
+  ctx.fillStyle = "#e9ecef"; ctx.fillRect(0, 0, W, H);
+  if (!M) return;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, view.x, view.y, M.w * view.s, M.h * view.s);
+
+  // マット・足した壁
+  const avoid = avoidSet();
+  for (const [name, poly] of Object.entries(M.mats)) {
+    const on = avoid.includes(name);
+    polyline(poly, true);
+    ctx.fillStyle = on ? "rgba(0,150,220,0.22)" : "rgba(0,150,220,0.08)"; ctx.fill();
+    ctx.setLineDash(on ? [] : [4, 4]);
+    ctx.strokeStyle = "#0a7ea4"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+    const [x, y] = m2s(poly[0][0], poly[0][1]);
+    ctx.fillStyle = "#0a7ea4"; ctx.font = "11px sans-serif";
+    ctx.fillText(name + (on ? "" : "(踏む)"), x + 3, y - 3);
+  }
+  ctx.strokeStyle = "#e07000"; ctx.lineWidth = 3;
+  for (const w of M.walls) { polyline([[w[0], w[1]], [w[2], w[3]]], false); ctx.stroke(); }
+
+  // 重ねる線
+  Object.keys(overlays).forEach((name, i) => {
+    const col = OVERLAY_COLORS[i % OVERLAY_COLORS.length];
+    ctx.globalAlpha = 0.6; ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+    polyline(overlays[name], true); ctx.stroke();
+    const P = overlays[name];
+    for (let k = 0; k + 1 < P.length; k += 40) arrow(P[k], P[k + 1], col, 5);
+    ctx.globalAlpha = 1;
+  });
+
+  // s=0 の基準(maps/raceline.csv の先頭)
+  {
+    const [x, y] = m2s(...M.ref_start);
+    ctx.fillStyle = "#000"; ctx.fillRect(x - 3, y - 3, 6, 6);
+    ctx.font = "11px sans-serif"; ctx.fillText("s=0", x + 5, y + 12);
+  }
+
+  // 解いた結果
+  if (result) {
+    ctx.globalAlpha = stale ? 0.3 : 1;
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = "#57606a"; ctx.lineWidth = 1;
+    polyline(result.seed, true); ctx.stroke(); ctx.setLineDash([]);
+    const P = result.points, n = P.length;
+    const by = document.querySelector("input[name=colorBy]:checked").value;
+    ctx.lineWidth = 3.5; ctx.lineCap = "round";
+    for (let i = 0; i < n; i++) {
+      const [ax, ay] = m2s(...P[i]), [bx, by2] = m2s(...P[(i + 1) % n]);
+      ctx.strokeStyle = by === "clr" ? colorClr(result.clr[i]) : colorKappa(result.kappa[i]);
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by2); ctx.stroke();
+    }
+    ctx.lineCap = "butt";
+    ctx.fillStyle = "#0b3d91"; ctx.font = "bold 11px sans-serif";
+    for (let i = 0; i < n; i += 100) {
+      const [x, y] = m2s(...P[i]);
+      ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 7); ctx.fill();
+      ctx.fillText(`${(i * 0.05).toFixed(0)}m`, x + 4, y - 4);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // 描いた線
+  if (preview.pts.length > 1) {
+    ctx.strokeStyle = "#1f6feb"; ctx.lineWidth = result && !stale ? 1.2 : 2;
+    polyline(preview.pts, ctrl.length >= 3); ctx.stroke();
+    const P = preview.pts;
+    for (let k = 10; k + 1 < P.length; k += 20) arrow(P[k], P[k + 1], "#1f6feb", 6);
+  }
+  ctrl.forEach((p, i) => {
+    const [x, y] = m2s(p[0], p[1]);
+    const r = i === hover ? 6 : 4;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7);
+    ctx.fillStyle = i === 0 ? "#2da44e" : "#fff"; ctx.fill();
+    ctx.strokeStyle = "#1f6feb"; ctx.lineWidth = 1.5; ctx.stroke();
+    if (i === 0) { ctx.fillStyle = "#1a7f37"; ctx.font = "bold 11px sans-serif"; ctx.fillText("始点", x + 7, y - 6); }
+  });
+
+  // フリーハンドで描いている途中
+  if (drag && drag.type === "free" && drag.pts.length > 1) {
+    ctx.strokeStyle = "#8250df"; ctx.lineWidth = 2;
+    polyline(drag.pts, false); ctx.stroke();
+  }
+}
+
+// ---------------------------------------------------------------- 操作
+function setMode(m) {
+  mode = m;
+  $("#mPoint").classList.toggle("on", m === "point");
+  $("#mFree").classList.toggle("on", m === "free");
+}
+function toast(s) {
+  const t = $("#toast"); t.textContent = s; t.style.display = "block";
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = "none", 2500);
+}
+function pos(e) { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+
+cv.addEventListener("contextmenu", e => e.preventDefault());
+cv.addEventListener("pointerdown", e => {
+  if (!M) return;
+  const [sx, sy] = pos(e);
+  cv.setPointerCapture(e.pointerId);
+  const startPan = () => { drag = { type: "pan", sx, sy, vx: view.x, vy: view.y }; };
+  if (e.button === 1 || (e.button === 0 && (spaceDown || e.shiftKey))) return startPan();
+  if (e.button === 2) {
+    const i = hitPoint(sx, sy);
+    if (i >= 0) { const c = ctrl.slice(); c.splice(i, 1); hover = -1; setCtrl(c); return; }
+    return startPan();
+  }
+  if (e.button !== 0) return;
+  const m = s2m(sx, sy);
+  if (mode === "free") { drag = { type: "free", pts: [m] }; return; }
+  let i = hitPoint(sx, sy);
+  if (i < 0) {
+    const c = ctrl.slice();
+    const seg = hitSegment(sx, sy);
+    i = seg >= 0 ? seg + 1 : c.length;
+    c.splice(i, 0, m);
+    setCtrl(c);
+  } else {
+    hist.push(JSON.stringify(ctrl)); fut = [];
+  }
+  drag = { type: "pt", i };
+});
+cv.addEventListener("pointermove", e => {
+  if (!M) return;
+  const [sx, sy] = pos(e);
+  mouse = [sx, sy];
+  const m = s2m(sx, sy);
+  $("#coord").textContent = `x ${m[0].toFixed(2)}  y ${m[1].toFixed(2)}`;
+  if (!drag) {
+    const h = hitPoint(sx, sy);
+    if (h !== hover) { hover = h; draw(); }
+    return;
+  }
+  if (drag.type === "pan") {
+    view.x = drag.vx + sx - drag.sx; view.y = drag.vy + sy - drag.sy; draw();
+  } else if (drag.type === "pt") {
+    ctrl[drag.i] = m; changed();
+  } else if (drag.type === "free") {
+    const q = drag.pts[drag.pts.length - 1];
+    if (Math.hypot(m[0] - q[0], m[1] - q[1]) >= 0.05) { drag.pts.push(m); draw(); }
+  }
+});
+cv.addEventListener("pointerup", e => {
+  if (!drag) return;
+  if (drag.type === "free") {
+    const P = decimate(drag.pts, 0.3);
+    if (P.length >= 4) { setCtrl(P); setMode("point"); toast("描けた。点モードで直せる"); }
+    else toast("短すぎる。1 周描く");
+  }
+  drag = null; draw();
+});
+cv.addEventListener("wheel", e => {
+  if (!M) return;
+  e.preventDefault();
+  const [sx, sy] = pos(e);
+  const f = Math.exp(-e.deltaY * 0.0015);
+  const s = Math.min(80, Math.max(0.5, view.s * f));
+  const g = s / view.s;
+  view.x = sx - (sx - view.x) * g; view.y = sy - (sy - view.y) * g; view.s = s;
+  draw();
+}, { passive: false });
+
+window.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.code === "Space") { spaceDown = true; e.preventDefault(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redoFn() : undo(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); redoFn(); }
+  else if ((e.key === "Delete" || e.key === "Backspace") && hover >= 0) {
+    const c = ctrl.slice(); c.splice(hover, 1); hover = -1; setCtrl(c);
+  } else if (e.key === "f" || e.key === "F") { fit(); draw(); }
+});
+window.addEventListener("keyup", e => { if (e.code === "Space") spaceDown = false; });
+window.addEventListener("resize", resize);
+
+$("#mPoint").onclick = () => setMode("point");
+$("#mFree").onclick = () => setMode("free");
+$("#undo").onclick = undo;
+$("#redo").onclick = redoFn;
+$("#reverse").onclick = () => { if (ctrl.length) setCtrl([ctrl[0], ...ctrl.slice(1).reverse()]); };
+$("#clear").onclick = () => { if (ctrl.length && confirm("描いた点を全部消す?")) setCtrl([]); };
+document.querySelectorAll("input[name=colorBy]").forEach(r => r.onchange = () => { legend(); draw(); });
+
+// ---------------------------------------------------------------- サーバ
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json();
+  return { status: r.status, ...j };
+}
+
+function fillLines() {
+  const sel = $("#lineSel"), ov = $("#overlays");
+  sel.innerHTML = ""; ov.innerHTML = "";
+  for (const n of M.racelines) {
+    sel.add(new Option(n, n));
+    const lab = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.value = n; cb.checked = n in overlays;
+    cb.onchange = async () => {
+      if (cb.checked) overlays[n] = (await api("/api/raceline?name=" + encodeURIComponent(n))).points;
+      else delete overlays[n];
+      draw();
+    };
+    lab.append(cb, " " + n);
+    ov.append(lab);
+  }
+}
+
+$("#loadLine").onclick = async () => {
+  const n = $("#lineSel").value;
+  if (!n) return;
+  const step = Math.max(0.2, parseFloat($("#lineStep").value) || 0.8);
+  const j = await api("/api/raceline?name=" + encodeURIComponent(n));
+  if (j.error) return toast(j.error);
+  setCtrl(decimate(j.points, step));
+  toast(`${n} を ${ctrl.length} 点で読み込んだ`);
+};
+
+function setParams(p) { for (const k of PRM) $("#p_" + k).value = p[k]; }
+function getParams() {
+  const p = {};
+  for (const k of PRM) { const v = parseFloat($("#p_" + k).value); if (!isNaN(v)) p[k] = v; }
+  return p;
+}
+$("#resetPrm").onclick = () => setParams(M.defaults);
+
+function legend() {
+  const by = document.querySelector("input[name=colorBy]:checked").value;
+  $("#legend").innerHTML = by === "clr"
+    ? '<span style="color:#cf222e">■</span> 下限+2cm 未満 <span style="color:#d4760b">■</span> +8cm 未満 <span style="color:#1a7f37">■</span> それ以上'
+    : '<span style="color:#1a7f37">■</span> 直線 → <span style="color:#cf222e">■</span> 1/r_target <span style="color:#c000c0">■</span> 超過';
+}
+
+$("#opt").onclick = async () => {
+  if (ctrl.length < 4) return toast("点が 4 つ以上要る");
+  const btn = $("#opt"), st = $("#optStatus");
+  btn.disabled = true;
+  const t0 = Date.now();
+  const tick = setInterval(() => st.textContent = `計算中… ${((Date.now() - t0) / 1000).toFixed(0)} 秒`, 500);
+  try {
+    const j = await api("/api/optimize", { points: ctrl, params: getParams(), avoid: avoidSet() });
+    if (j.error) { st.textContent = "エラー: " + j.error; return; }
+    result = j; stale = false;
+    st.textContent = `${j.stats.time.toFixed(1)} 秒で解けた`;
+    $("#checks").innerHTML = j.checks.map(c =>
+      `<div class="${c.ok ? "ok" : (c.warn ? "warn" : "ng")}">${c.ok ? "✓" : (c.warn ? "⚠" : "✗")} ${c.msg}</div>`).join("");
+    const s = j.stats;
+    $("#stats").textContent =
+      `周長 ${s.length.toFixed(2)} m / ∫k² ${s.k2.toFixed(2)} / ∫|dk/ds| ${s.dk.toFixed(2)}\n` +
+      `曲率の符号反転 ${s.flips} 回\n` +
+      `描いた線からのずれ 最大 ${s.lat_max.toFixed(3)} m / RMS ${s.lat_rms.toFixed(3)} m`;
+    changed(false);
+  } catch (e) {
+    st.textContent = "エラー: " + e;
+  } finally {
+    clearInterval(tick); btn.disabled = false;
+  }
+};
+
+$("#save").onclick = async () => {
+  const msg = $("#msg");
+  if (!result) return toast("先にきれいにする");
+  if (stale && !confirm("点を動かした後、まだ解き直していない。前の結果を保存する?")) return;
+  if (result.checks.some(c => !c.ok && !c.warn) && !confirm("NG の項目がある。このまま保存する?")) return;
+  const name = $("#saveName").value.trim();
+  let j = await api("/api/save", { id: result.id, name, overwrite: false });
+  if (j.status === 409 && confirm(`maps/${name}.csv は既にある。上書きする?`))
+    j = await api("/api/save", { id: result.id, name, overwrite: true });
+  if (j.error && j.status !== 200) { msg.className = "ng"; msg.textContent = j.error; return; }
+  msg.className = "ok";
+  msg.textContent = `保存した: ${j.path}\n実機では launch に ${j.jetson} を渡す`;
+  if (!M.racelines.includes(name)) { M.racelines.push(name); M.racelines.sort(); fillLines(); }
+};
+
+// ---------------------------------------------------------------- 起動
+(async () => {
+  M = await api("/api/init");
+  img.onload = () => { fit(); resize(); };
+  img.src = M.image;
+  setParams(M.defaults);
+  const mats = $("#mats");
+  for (const n of Object.keys(M.mats)) {
+    const lab = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.value = n; cb.checked = true; cb.onchange = draw;
+    lab.append(cb, " " + n + " ");
+    mats.append(lab);
+  }
+  fillLines();
+  legend();
+  try {
+    const s = JSON.parse(localStorage.getItem("draw_raceline_ctrl") || "[]");
+    if (Array.isArray(s) && s.length) { ctrl = s; toast(`前回の点 ${s.length} 個を復元`); }
+  } catch (e) {}
+  changed();
+})();
+</script>
+</body>
+</html>
