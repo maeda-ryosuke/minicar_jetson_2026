@@ -14,8 +14,9 @@
   <exec_depend>minicar_mppi</exec_depend>
   <exec_depend>minicar_realsense</exec_depend>
   <exec_depend>minicar_safety</exec_depend>
-  <!-- race.launch.py 用。minicar_nav2 も include するが、minicar_nav2 が
-       minicar_bringup に依存しているので循環を避けてここには書かない。 -->
+  <!-- race.launch.py / race_zone.launch.py 用。minicar_nav2 と minicar_nav2_zone も
+       include するが、どちらも minicar_bringup に依存しているので循環を避けて
+       ここには書かない。 -->
   <exec_depend>minicar_raceline</exec_depend>
   <exec_depend>minicar_motor</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
