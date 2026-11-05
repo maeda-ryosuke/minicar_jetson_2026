@@ -54,7 +54,7 @@ controller_server:
       iteration_count: 1
       vx_std: 0.20
       vy_std: 0.0
-      wz_std: 0.20
+      wz_std: 0.15
       vx_max: 3.0
       vx_min: 2.0
       vy_max: 0.0
