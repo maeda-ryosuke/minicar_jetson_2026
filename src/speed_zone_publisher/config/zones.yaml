@@ -1,0 +1,18 @@
+# エリア定義(map 座標)。speed_zone_publisher が読み、my_mppi_controller は読まない。
+# どのエリアにも入らないときは default_speed、重なっていれば遅いほうを使う。
+#
+# 初期値は minicar_nav2_zone の slow_zones(ヘアピン 3 か所の矩形)を多角形にしたもの。
+# 減速の先読みはしないので、遅いエリアは手前に (v1² - v2²) / (2·decel_max) だけ
+# 広げて描くこと(3.0 -> 2.0、decel 2.0 なら 1.25 m)。RViz で /speed_zone_publisher/markers
+# を地図に重ねて、実走で詰める。
+default_speed: 3.0
+zones:
+  - name: hairpin_se
+    speed: 2.0
+    polygon: [[2.2, -0.8], [4.0, -0.8], [4.0, 1.7], [2.2, 1.7]]
+  - name: hairpin_w
+    speed: 2.0
+    polygon: [[-3.8, 1.0], [-2.5, 1.0], [-2.5, 3.5], [-3.8, 3.5]]
+  - name: hairpin_ne
+    speed: 2.0
+    polygon: [[2.3, 2.2], [4.2, 2.2], [4.2, 4.8], [2.3, 4.8]]
