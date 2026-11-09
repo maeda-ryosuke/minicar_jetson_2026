@@ -331,4 +331,27 @@ TEST(MotionModelTests, BicycleSteerRateLimitTest)
   EXPECT_NEAR(state.wz(0, 1), std::tan(0.05f) / L, 1e-4);
   EXPECT_NEAR(state.wz(0, 2), std::tan(0.10f) / L, 1e-4);
 }
+
+TEST(MotionModelTests, BicycleSteerMaxTest)
+{
+  models::ControlSequence control_sequence;
+  int timesteps = 20;
+  control_sequence.reset(timesteps);
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("my_node");
+  node->declare_parameter("my_node.steer_max", rclcpp::ParameterValue(0.25));
+  ParametersHandler param_handler(node);
+  BicycleMotionModel model(&param_handler, node->get_name(), 0.1f);
+
+  // cwz は ±steer_max を超えない。vx は変えない
+  for (int i = 0; i < timesteps; ++i) {
+    control_sequence.vx(i) = 1.0f;
+    control_sequence.wz(i) = -1.0f + 0.1f * i;
+  }
+  model.applyConstraints(control_sequence);
+  for (int i = 0; i < timesteps; ++i) {
+    EXPECT_LE(std::fabs(control_sequence.wz(i)), 0.25f + 1e-6);
+    EXPECT_EQ(control_sequence.vx(i), 1.0f);
+  }
+  EXPECT_NEAR(control_sequence.wz(10), 0.0f, 1e-6);
+}
 // [ADD END]

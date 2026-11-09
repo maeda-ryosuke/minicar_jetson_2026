@@ -145,6 +145,7 @@ public:
     getParam(wheelbase_, "wheelbase", 0.257);
     getParam(steer_time_constant_, "steer_time_constant", 0.08);
     getParam(steer_rate_max_, "steer_rate_max", 4.0);
+    getParam(steer_max_, "steer_max", 0.30);
   }
 
   bool isHolonomic() override
@@ -171,6 +172,14 @@ public:
   }
 
   /**
+   * @brief δ 指令をステア角の上限 ±steer_max でクリップする
+   */
+  void applyConstraints(models::ControlSequence & control_sequence) override
+  {
+    control_sequence.wz = xt::clip(control_sequence.wz, -steer_max_, steer_max_);
+  }
+
+  /**
    * @brief 出力した δ 指令で、実際の δ の推定値を1制御周期ぶん進める
    */
   void updateSteerEstimate(float delta_cmd, float dt)
@@ -193,6 +202,7 @@ protected:
   float wheelbase_{0.257};
   float steer_time_constant_{0.08};
   float steer_rate_max_{4.0};
+  float steer_max_{0.30};
   float delta_estimate_{0.0};
 };
 // [ADD END]
