@@ -33,6 +33,7 @@ set(dependencies_pkgs
   tf2_geometry_msgs
   tf2_eigen
   tf2_ros
+  std_msgs  # [ADD] /target_speed(std_msgs/Float32)
 )
 
 foreach(pkg IN LISTS dependencies_pkgs)

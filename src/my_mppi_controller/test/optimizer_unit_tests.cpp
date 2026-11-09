@@ -67,6 +67,21 @@ public:
     EXPECT_FALSE(isHolonomic());
   }
 
+  // [ADD BEGIN] スピード固定モードの v の列を作る
+  xt::xtensor<float, 1> fixedSpeedWrapper(float v_meas, float last_vx)
+  {
+    state_.speed.linear.x = v_meas;
+    last_vx_ = last_vx;
+    updateFixedSpeed();
+    return fixed_vx_;
+  }
+
+  void setTargetSpeedWrapper(float target_speed)
+  {
+    setTargetSpeed(target_speed);
+  }
+  // [ADD END]
+
   // [ADD BEGIN] 自転車モデルを選ぶ
   void testSetBicycleModel()
   {
@@ -588,6 +603,58 @@ TEST(OptimizerTests, getControlFromSequenceAsTwistTests)
   EXPECT_NEAR(bicycle_t.twist.angular.z, 0.25 * std::tan(0.1) / 0.257, 1e-5);
   // [ADD END]
 }
+
+// [ADD BEGIN] スピード固定モード
+TEST(OptimizerTests, FixedSpeedTests)
+{
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("my_node");
+  OptimizerTester optimizer_tester;
+  node->declare_parameter("controller_frequency", rclcpp::ParameterValue(30.0));
+  node->declare_parameter("mppic.model_dt", rclcpp::ParameterValue(0.1));
+  node->declare_parameter("mppic.time_steps", rclcpp::ParameterValue(10));
+  node->declare_parameter("mppic.speed_mode", rclcpp::ParameterValue("fixed_topic"));
+  node->declare_parameter("mppic.accel_max", rclcpp::ParameterValue(2.0));
+  node->declare_parameter("mppic.decel_max", rclcpp::ParameterValue(2.0));
+  node->declare_parameter("mppic.speed_restart_margin", rclcpp::ParameterValue(0.5));
+  node->declare_parameter("mppic.target_speed_timeout", rclcpp::ParameterValue(0.2));
+  auto costmap_ros = std::make_shared<nav2_costmap_2d::Costmap2DROS>(
+    "dummy_costmap", "", "dummy_costmap");
+  ParametersHandler param_handler(node);
+  rclcpp_lifecycle::State lstate;
+  costmap_ros->on_configure(lstate);
+  optimizer_tester.initialize(node, "mppic", costmap_ros, &param_handler);
+  const float dv_ctrl = 2.0f / 30.0f;  // 1制御周期の変化量
+  const float dv_step = 2.0f * 0.1f;  // ホライズン1ステップの変化量
+
+  // 一度も受信していなければ v=0
+  auto vx = optimizer_tester.fixedSpeedWrapper(1.0f, 1.0f);
+  EXPECT_EQ(vx, xt::zeros<float>({10}));
+
+  // 加速:1.5 -> 3.0 は accel_max のランプになる
+  optimizer_tester.setTargetSpeedWrapper(3.0f);
+  vx = optimizer_tester.fixedSpeedWrapper(1.5f, 1.5f);
+  for (int t = 0; t < 10; ++t) {
+    EXPECT_NEAR(vx(t), std::min(1.5f + dv_ctrl + dv_step * t, 3.0f), 1e-5);
+  }
+
+  // 減速:3.0 -> 1.5 は前回の出力から decel_max のランプになる
+  optimizer_tester.setTargetSpeedWrapper(1.5f);
+  vx = optimizer_tester.fixedSpeedWrapper(3.0f, 3.0f);
+  for (int t = 0; t < 10; ++t) {
+    EXPECT_NEAR(vx(t), std::max(3.0f - dv_ctrl - dv_step * t, 1.5f), 1e-5);
+  }
+
+  // 実速度が低い(スタック復帰の後など)ときは「実速度 + margin」から加速し直す
+  optimizer_tester.setTargetSpeedWrapper(3.0f);
+  vx = optimizer_tester.fixedSpeedWrapper(0.0f, 3.0f);
+  EXPECT_NEAR(vx(0), 0.5f + dv_ctrl, 1e-5);
+
+  // 最後の受信から timeout を超えたら v=0
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+  vx = optimizer_tester.fixedSpeedWrapper(3.0f, 3.0f);
+  EXPECT_EQ(vx, xt::zeros<float>({10}));
+}
+// [ADD END]
 
 TEST(OptimizerTests, integrateStateVelocitiesTests)
 {

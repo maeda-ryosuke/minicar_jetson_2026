@@ -49,6 +49,19 @@ void Optimizer::initialize(
   getParams();
 
   critic_manager_.on_configure(parent_, name_, costmap_ros_, parameters_handler_);
+
+  // [ADD BEGIN] fixed_topic のときは目標速度を購読する
+  if (fixed_speed_) {
+    std::string target_speed_topic;
+    parameters_handler_->getParamGetter(name_)(
+      target_speed_topic, "target_speed_topic", std::string("/target_speed"),
+      ParameterType::Static);
+    clock_ = node->get_clock();
+    target_speed_sub_ = node->create_subscription<std_msgs::msg::Float32>(
+      target_speed_topic, 10,
+      [this](const std_msgs::msg::Float32::SharedPtr msg) {setTargetSpeed(msg->data);});
+  }
+  // [ADD END]
   noise_generator_.initialize(settings_, isHolonomic(), name_, parameters_handler_);
 
   reset();
@@ -82,6 +95,16 @@ void Optimizer::getParams()
   getParam(s.retry_attempt_limit, "retry_attempt_limit", 1);
 
   getParam(motion_model_name, "motion_model", std::string("DiffDrive"));
+
+  // [ADD BEGIN] スピード固定モード
+  std::string speed_mode;
+  getParam(speed_mode, "speed_mode", std::string("sampled"), ParameterType::Static);
+  fixed_speed_ = speed_mode == "fixed_topic";
+  getParam(target_speed_timeout_, "target_speed_timeout", 0.3);
+  getParam(accel_max_, "accel_max", 2.0);
+  getParam(decel_max_, "decel_max", 2.0);
+  getParam(speed_restart_margin_, "speed_restart_margin", 0.5);
+  // [ADD END]
 
   s.constraints = s.base_constraints;
   setMotionModel(motion_model_name);
@@ -145,12 +168,26 @@ geometry_msgs::msg::TwistStamped Optimizer::evalControl(
 
   prepare(robot_pose, robot_speed, plan, goal_checker);
 
+  // [ADD BEGIN] fixed_topic のときは、この周期の v の列を先に決めて制御列に入れる
+  if (fixed_speed_) {
+    updateFixedSpeed();
+    control_sequence_.vx = fixed_vx_;
+  }
+  // [ADD END]
+
   do {
     optimize();
   } while (fallback(critics_data_.fail_flag));
 
   utils::savitskyGolayFilter(control_sequence_, control_history_, settings_);
+
+  // [ADD BEGIN] 平滑化やクリップで v が変わらないよう、出力の前にもう一度 v の列で上書きする
+  if (fixed_speed_) {
+    control_sequence_.vx = fixed_vx_;
+  }
+  // [ADD END]
   auto control = getControlFromSequenceAsTwist(plan.header.stamp);
+  last_vx_ = control.twist.linear.x;  // [ADD] 次の周期の v の起点に使う
 
   // [ADD] 出力した δ 指令を覚えておく(次の周期の頭で δ の推定値を進めるのに使う)
   last_delta_cmd_ = control_sequence_.wz(settings_.shift_control_sequence ? 1 : 0);
@@ -231,6 +268,10 @@ void Optimizer::shiftControlSequence()
 void Optimizer::generateNoisedTrajectories()
 {
   noise_generator_.setNoisedControls(state_, control_sequence_);
+  // [ADD] fixed_topic のときは v にノイズを乗せず、全サンプルで同じ v の列を使う
+  if (fixed_speed_) {
+    xt::noalias(state_.cvx) = xt::broadcast(fixed_vx_, state_.cvx.shape());
+  }
   noise_generator_.generateNextNoises();
   updateStateVelocities(state_);
   integrateStateVelocities(generated_trajectories_, state_);
@@ -479,6 +520,51 @@ void Optimizer::setSpeedLimit(double speed_limit, bool percentage)
     }
   }
 }
+
+// [ADD BEGIN] スピード固定モード
+void Optimizer::setTargetSpeed(float target_speed)
+{
+  std::lock_guard<std::mutex> lock(target_speed_mutex_);
+  target_speed_ = target_speed;
+  target_speed_stamp_ = clock_->now();
+}
+
+void Optimizer::updateFixedSpeed()
+{
+  // 一度も受信していない、または最後の受信から timeout を超えたら v=0
+  float target = 0.0f;
+  bool valid = false;
+  {
+    std::lock_guard<std::mutex> lock(target_speed_mutex_);
+    if (target_speed_stamp_ &&
+      (clock_->now() - *target_speed_stamp_).seconds() <= target_speed_timeout_)
+    {
+      target = target_speed_;
+      valid = true;
+    }
+  }
+  fixed_vx_ = xt::zeros<float>({settings_.time_steps});
+  if (!valid) {
+    return;
+  }
+
+  // v を target へ dt 秒ぶん近づける(加速は accel_max、減速は decel_max)
+  auto move_toward = [&](float v, float dt) {
+      return target > v ?
+             std::min(v + accel_max_ * dt, target) :
+             std::max(v - decel_max_ * dt, target);
+    };
+
+  // 起点は「前回の出力」と「実速度 + margin」の小さいほう。発進やスタック復帰の後に、
+  // 実速度より大きく離れた v から加速し直さないため
+  const float start = std::min(
+    last_vx_, static_cast<float>(state_.speed.linear.x) + speed_restart_margin_);
+  const float v0 = move_toward(start, control_period_);
+  for (unsigned int t = 0; t < settings_.time_steps; ++t) {
+    fixed_vx_(t) = move_toward(v0, settings_.model_dt * t);
+  }
+}
+// [ADD END]
 
 models::Trajectories & Optimizer::getGeneratedTrajectories()
 {

@@ -17,6 +17,8 @@
 
 #include <string>
 #include <memory>
+#include <mutex>  // [ADD] 目標速度の排他
+#include <optional>  // [ADD] 目標速度の受信時刻
 
 #include <xtensor/xtensor.hpp>
 #include <xtensor/xview.hpp>
@@ -30,6 +32,7 @@
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "nav_msgs/msg/path.hpp"
+#include "std_msgs/msg/float32.hpp"  // [ADD] /target_speed
 
 #include "my_mppi_controller/models/optimizer_settings.hpp"
 #include "my_mppi_controller/motion_models.hpp"
@@ -213,6 +216,18 @@ protected:
   geometry_msgs::msg::TwistStamped
   getControlFromSequenceAsTwist(const builtin_interfaces::msg::Time & stamp);
 
+  // [ADD BEGIN] スピード固定モード(speed_mode: fixed_topic)
+  /**
+   * @brief 受信した目標速度と受信時刻を保存する(購読のコールバックから呼ぶ)
+   */
+  void setTargetSpeed(float target_speed);
+
+  /**
+   * @brief 目標速度に向けて加減速を制限した v の列を fixed_vx_ に作る
+   */
+  void updateFixedSpeed();
+  // [ADD END]
+
   /**
    * @brief Whether the motion model is holonomic
    * @return Bool if holonomic to populate `y` axis of state
@@ -246,6 +261,21 @@ protected:
   models::OptimizerSettings settings_;
   float control_period_{0.05f};  // [ADD] 1/controller_frequency [s]
   float last_delta_cmd_{0.0f};  // [ADD] 前の周期に出した δ 指令 [rad]
+
+  // [ADD BEGIN] スピード固定モード(speed_mode: fixed_topic)
+  bool fixed_speed_{false};
+  float target_speed_timeout_{0.3f};
+  float accel_max_{2.0f};
+  float decel_max_{2.0f};
+  float speed_restart_margin_{0.5f};
+  float last_vx_{0.0f};  // 前の周期に出した v
+  xt::xtensor<float, 1> fixed_vx_;  // この周期の v の列(ホライズン全体)
+  std::mutex target_speed_mutex_;  // 購読と evalControl は別スレッド
+  float target_speed_{0.0f};
+  std::optional<rclcpp::Time> target_speed_stamp_;
+  rclcpp::Clock::SharedPtr clock_;
+  rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr target_speed_sub_;
+  // [ADD END]
 
   models::State state_;
   models::ControlSequence control_sequence_;
