@@ -1,0 +1,13 @@
+# 検証用のエリア定義(20261105 の bag の地図用)。speed_zone_publisher/config/zones.yaml と同じ
+# ヘアピン 3 か所(minicar_nav2_zone の slow_zones の矩形)を出発点にしている。
+default_speed: 3.0
+zones:
+  - name: hairpin_se
+    speed: 2.0
+    polygon: [[2.2, -0.8], [4.0, -0.8], [4.0, 1.7], [2.2, 1.7]]
+  - name: hairpin_w
+    speed: 2.0
+    polygon: [[-3.8, 1.0], [-2.5, 1.0], [-2.5, 3.5], [-3.8, 3.5]]
+  - name: hairpin_ne
+    speed: 2.0
+    polygon: [[2.3, 2.2], [4.2, 2.2], [4.2, 4.8], [2.3, 4.8]]
