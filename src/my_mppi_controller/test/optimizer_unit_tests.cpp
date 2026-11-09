@@ -67,6 +67,15 @@ public:
     EXPECT_FALSE(isHolonomic());
   }
 
+  // [ADD BEGIN] 自転車モデルを選ぶ
+  void testSetBicycleModel()
+  {
+    EXPECT_NO_THROW(setMotionModel("Bicycle"));
+    EXPECT_TRUE(dynamic_cast<BicycleMotionModel *>(motion_model_.get()));
+    EXPECT_FALSE(isHolonomic());
+  }
+  // [ADD END]
+
   void testSetRandModel()
   {
     EXPECT_EQ(motion_model_.get(), nullptr);
@@ -569,6 +578,15 @@ TEST(OptimizerTests, getControlFromSequenceAsTwistTests)
   EXPECT_NEAR(omni_t.twist.linear.x, 0.25, 1e-6);
   EXPECT_NEAR(omni_t.twist.linear.y, 0.5, 1e-6);  // Now it should be
   EXPECT_NEAR(omni_t.twist.angular.z, 0.1, 1e-6);
+
+  // [ADD BEGIN] Bicycle では wz(=δ)を v·tan(δ)/L のヨーレートにして出す
+  optimizer_tester.resetMotionModel();
+  optimizer_tester.testSetBicycleModel();
+  auto bicycle_t = optimizer_tester.getControlFromSequenceAsTwistWrapper();
+  EXPECT_NEAR(bicycle_t.twist.linear.x, 0.25, 1e-6);
+  EXPECT_NEAR(bicycle_t.twist.linear.y, 0.0, 1e-6);
+  EXPECT_NEAR(bicycle_t.twist.angular.z, 0.25 * std::tan(0.1) / 0.257, 1e-5);
+  // [ADD END]
 }
 
 TEST(OptimizerTests, integrateStateVelocitiesTests)

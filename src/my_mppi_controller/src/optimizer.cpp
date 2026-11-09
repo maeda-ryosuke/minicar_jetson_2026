@@ -419,6 +419,12 @@ geometry_msgs::msg::TwistStamped Optimizer::getControlFromSequenceAsTwist(
   auto vx = control_sequence_.vx(offset);
   auto wz = control_sequence_.wz(offset);
 
+  // [ADD BEGIN] Bicycle では wz は δ なので、予測と同じ式 v·tan(δ)/L でヨーレートに直して出す
+  if (auto bicycle = std::dynamic_pointer_cast<BicycleMotionModel>(motion_model_)) {
+    wz = vx * std::tan(wz) / bicycle->getWheelbase();
+  }
+  // [ADD END]
+
   if (isHolonomic()) {
     auto vy = control_sequence_.vy(offset);
     return utils::toTwistStamped(vx, vy, wz, stamp, costmap_ros_->getBaseFrameID());
