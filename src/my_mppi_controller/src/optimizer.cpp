@@ -90,6 +90,7 @@ void Optimizer::getParams()
   double controller_frequency;
   getParentParam(controller_frequency, "controller_frequency", 0.0, ParameterType::Static);
   setOffset(controller_frequency);
+  control_period_ = 1.0f / controller_frequency;  // [ADD] δ の推定値を進める時間
 }
 
 void Optimizer::setOffset(double controller_frequency)
@@ -136,6 +137,12 @@ geometry_msgs::msg::TwistStamped Optimizer::evalControl(
   const geometry_msgs::msg::Twist & robot_speed,
   const nav_msgs::msg::Path & plan, nav2_core::GoalChecker * goal_checker)
 {
+  // [ADD BEGIN] 前の周期に出した δ 指令で、実際の δ の推定値を1制御周期ぶん進める(予測の初期値)
+  if (auto bicycle = std::dynamic_pointer_cast<BicycleMotionModel>(motion_model_)) {
+    bicycle->updateSteerEstimate(last_delta_cmd_, control_period_);
+  }
+  // [ADD END]
+
   prepare(robot_pose, robot_speed, plan, goal_checker);
 
   do {
@@ -144,6 +151,9 @@ geometry_msgs::msg::TwistStamped Optimizer::evalControl(
 
   utils::savitskyGolayFilter(control_sequence_, control_history_, settings_);
   auto control = getControlFromSequenceAsTwist(plan.header.stamp);
+
+  // [ADD] 出力した δ 指令を覚えておく(次の周期の頭で δ の推定値を進めるのに使う)
+  last_delta_cmd_ = control_sequence_.wz(settings_.shift_control_sequence ? 1 : 0);
 
   if (settings_.shift_control_sequence) {
     shiftControlSequence();
@@ -345,6 +355,20 @@ xt::xtensor<float, 2> Optimizer::getOptimizedTrajectory()
   xt::noalias(xt::view(sequence, xt::all(), 0)) = control_sequence_.vx;
   xt::noalias(xt::view(sequence, xt::all(), 1)) = control_sequence_.wz;
 
+  // [ADD BEGIN] Bicycle では制御列の wz は δ なので、予測と同じモデルで速度・ヨーレートに直す
+  if (auto bicycle = std::dynamic_pointer_cast<BicycleMotionModel>(motion_model_)) {
+    models::State state;
+    state.reset(1, settings_.time_steps);
+    state.speed = state_.speed;
+    xt::noalias(xt::row(state.cvx, 0)) = control_sequence_.vx;
+    xt::noalias(xt::row(state.cwz, 0)) = control_sequence_.wz;
+    updateInitialStateVelocities(state);
+    bicycle->predict(state);
+    xt::noalias(xt::view(sequence, xt::all(), 0)) = xt::row(state.vx, 0);
+    xt::noalias(xt::view(sequence, xt::all(), 1)) = xt::row(state.wz, 0);
+  }
+  // [ADD END]
+
   if (isHolonomic()) {
     xt::noalias(xt::view(sequence, xt::all(), 2)) = control_sequence_.vy;
   }
@@ -411,11 +435,15 @@ void Optimizer::setMotionModel(const std::string & model)
     motion_model_ = std::make_shared<OmniMotionModel>();
   } else if (model == "Ackermann") {
     motion_model_ = std::make_shared<AckermannMotionModel>(parameters_handler_, name_);
+  } else if (model == "Bicycle") {  // [ADD] 自転車モデル
+    motion_model_ =
+      std::make_shared<BicycleMotionModel>(parameters_handler_, name_, settings_.model_dt);
   } else {
+    // [MOD] 選択肢に Bicycle を追加(元:DiffDrive, Omni, Ackermann)
     throw std::runtime_error(
             std::string(
               "Model " + model + " is not valid! Valid options are DiffDrive, Omni, "
-              "or Ackermann"));
+              "Ackermann, or Bicycle"));
   }
 }
 

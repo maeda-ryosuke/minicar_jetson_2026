@@ -244,6 +244,8 @@ protected:
   NoiseGenerator noise_generator_;
 
   models::OptimizerSettings settings_;
+  float control_period_{0.05f};  // [ADD] 1/controller_frequency [s]
+  float last_delta_cmd_{0.0f};  // [ADD] 前の周期に出した δ 指令 [rad]
 
   models::State state_;
   models::ControlSequence control_sequence_;

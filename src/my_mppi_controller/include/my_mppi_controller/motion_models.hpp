@@ -15,6 +15,8 @@
 #ifndef MY_MPPI_CONTROLLER__MOTION_MODELS_HPP_
 #define MY_MPPI_CONTROLLER__MOTION_MODELS_HPP_
 
+#include <algorithm>  // [ADD] std::clamp
+#include <cmath>  // [ADD] std::exp, std::tan
 #include <cstdint>
 #include <string>
 
@@ -126,6 +128,74 @@ public:
 private:
   float min_turning_r_{0};
 };
+
+// [ADD BEGIN] 運動学的自転車モデル
+/**
+ * @class my_mppi::BicycleMotionModel
+ * @brief cwz をステア角 δ [rad] として扱う。δ はサーボの1次遅れで指令に追従し、
+ * ヨーレートは wz = v·tan(δ)/L で求める
+ */
+class BicycleMotionModel : public MotionModel
+{
+public:
+  BicycleMotionModel(ParametersHandler * param_handler, const std::string & name, float model_dt)
+  : model_dt_(model_dt)
+  {
+    auto getParam = param_handler->getParamGetter(name);
+    getParam(wheelbase_, "wheelbase", 0.257);
+    getParam(steer_time_constant_, "steer_time_constant", 0.08);
+    getParam(steer_rate_max_, "steer_rate_max", 4.0);
+  }
+
+  bool isHolonomic() override
+  {
+    return false;
+  }
+
+  void predict(models::State & state) override
+  {
+    using namespace xt::placeholders;  // NOLINT
+    xt::noalias(xt::view(state.vx, xt::all(), xt::range(1, _))) =
+      xt::view(state.cvx, xt::all(), xt::range(0, -1));
+
+    // δ は前の周期から持ち越した推定値から始め、1ステップずつ指令へ追従させる
+    const size_t batch_size = state.cwz.shape(0);
+    const size_t time_steps = state.cwz.shape(1);
+    for (size_t i = 0; i < batch_size; ++i) {
+      float delta = delta_estimate_;
+      for (size_t t = 1; t < time_steps; ++t) {
+        delta = steerStep(delta, state.cwz(i, t - 1), model_dt_);
+        state.wz(i, t) = state.vx(i, t) * std::tan(delta) / wheelbase_;
+      }
+    }
+  }
+
+  /**
+   * @brief 出力した δ 指令で、実際の δ の推定値を1制御周期ぶん進める
+   */
+  void updateSteerEstimate(float delta_cmd, float dt)
+  {
+    delta_estimate_ = steerStep(delta_estimate_, delta_cmd, dt);
+  }
+
+  float getWheelbase() const {return wheelbase_;}
+
+protected:
+  // 1次遅れ(1ステップの間 cmd が一定としたときの厳密解)。その後、変化量をレート上限で制限する
+  float steerStep(float delta, float cmd, float dt) const
+  {
+    const float alpha = 1.0f - std::exp(-dt / steer_time_constant_);
+    const float max_step = steer_rate_max_ * dt;
+    return delta + std::clamp((cmd - delta) * alpha, -max_step, max_step);
+  }
+
+  float model_dt_;
+  float wheelbase_{0.257};
+  float steer_time_constant_{0.08};
+  float steer_rate_max_{4.0};
+  float delta_estimate_{0.0};
+};
+// [ADD END]
 
 /**
  * @class my_mppi::DiffDriveMotionModel

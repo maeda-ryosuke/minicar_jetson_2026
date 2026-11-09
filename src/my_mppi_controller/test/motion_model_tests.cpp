@@ -255,3 +255,80 @@ TEST(MotionModelTests, AckermannReversingTest)
   // Check it cleanly destructs
   model.reset();
 }
+
+// [ADD BEGIN] 自転車モデルのテスト
+TEST(MotionModelTests, BicycleStraightAndCircleTest)
+{
+  models::State state;
+  int batches = 10;
+  int timesteps = 20;
+  state.reset(batches, timesteps);
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("my_node");
+  ParametersHandler param_handler(node);
+  BicycleMotionModel model(&param_handler, node->get_name(), 0.1f);
+  const float L = model.getWheelbase();
+  EXPECT_EQ(model.isHolonomic(), false);
+
+  // δ=0 なら直進(ヨーレート 0)
+  state.cvx = 2.0f * xt::ones<float>({batches, timesteps});
+  model.predict(state);
+  EXPECT_EQ(state.vx(0, 1), 2.0f);
+  for (int t = 1; t < timesteps; ++t) {
+    EXPECT_NEAR(state.wz(0, t), 0.0f, 1e-6);
+  }
+
+  // δ一定(実際の δ も指令に追いついた状態)なら、半径 L/tan(δ) の円になる
+  const float delta = 0.2f;
+  for (int k = 0; k < 100; ++k) {
+    model.updateSteerEstimate(delta, 0.1f);
+  }
+  state.cwz = delta * xt::ones<float>({batches, timesteps});
+  model.predict(state);
+  for (int t = 1; t < timesteps; ++t) {
+    EXPECT_NEAR(state.vx(0, t) / state.wz(0, t), L / std::tan(delta), 1e-4);
+  }
+}
+
+TEST(MotionModelTests, BicycleSteerLagTest)
+{
+  models::State state;
+  int batches = 1;
+  int timesteps = 30;
+  state.reset(batches, timesteps);
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("my_node");
+  ParametersHandler param_handler(node);
+  BicycleMotionModel model(&param_handler, node->get_name(), 0.1f);
+  const float L = model.getWheelbase();
+
+  // 0 から δ=0.2 へステップ。dt/τ = 1.25 でも行き過ぎずに単調に近づく
+  state.cvx = xt::ones<float>({batches, timesteps});
+  state.cwz = 0.2f * xt::ones<float>({batches, timesteps});
+  model.predict(state);
+  const float delta1 = 0.2f * (1.0f - std::exp(-0.1f / 0.08f));
+  EXPECT_NEAR(state.wz(0, 1), std::tan(delta1) / L, 1e-4);
+  for (int t = 2; t < timesteps; ++t) {
+    EXPECT_GE(state.wz(0, t), state.wz(0, t - 1) - 1e-6);
+    EXPECT_LE(state.wz(0, t), std::tan(0.2f) / L + 1e-4);
+  }
+}
+
+TEST(MotionModelTests, BicycleSteerRateLimitTest)
+{
+  models::State state;
+  int batches = 1;
+  int timesteps = 5;
+  state.reset(batches, timesteps);
+  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("my_node");
+  node->declare_parameter("my_node.steer_rate_max", rclcpp::ParameterValue(0.5));
+  ParametersHandler param_handler(node);
+  BicycleMotionModel model(&param_handler, node->get_name(), 0.1f);
+  const float L = model.getWheelbase();
+
+  // 1ステップの変化量は steer_rate_max·dt = 0.05 rad まで
+  state.cvx = xt::ones<float>({batches, timesteps});
+  state.cwz = 0.3f * xt::ones<float>({batches, timesteps});
+  model.predict(state);
+  EXPECT_NEAR(state.wz(0, 1), std::tan(0.05f) / L, 1e-4);
+  EXPECT_NEAR(state.wz(0, 2), std::tan(0.10f) / L, 1e-4);
+}
+// [ADD END]
