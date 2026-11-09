@@ -1,0 +1,191 @@
+# my_mppi_controller(自転車モデル+スピード固定)の controller_server 設定。
+# minicar_nav2/config/nav2_mppi_params.yaml をもとに、プラグイン・運動モデル・速度の扱いだけを変えた。
+#   * motion_model: Bicycle。cwz はステア角 δ [rad]。wheelbase は launch が vehicle_params から注入する
+#   * speed_mode: fixed_topic。v は /target_speed(区間の目標速度)へ accel_max / decel_max で近づける
+#   * /speed_limit は出さない(vx 系の上限が縮む)
+
+controller_server:
+  ros__parameters:
+    use_sim_time: false
+    # model_dt(0.1)と一致させない。Humble の MPPI は 1/controller_frequency ==
+    # model_dt のときだけ「制御列シフト」を ON にし、制御列の 2 番目(1 ステップ先)
+    # を指令として出す。シムではシフト OFF の方が精度が良かった
+    # (model_dt 0.05 のまま 20Hz->25Hz でシフトを切ると 11.9 -> 6.3 cm)。
+    # 起動時に「Controller period is less then model dt」の WARN が出るが意図どおり。
+    controller_frequency: 30.0
+    odom_topic: /odometry/filtered
+    failure_tolerance: 0.3
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+
+    # Humble では progress checker は単数形パラメータ。
+    progress_checker_plugin: progress_checker
+    goal_checker_plugins: ["general_goal_checker"]
+    controller_plugins: ["FollowPath"]
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.10
+      movement_time_allowance: 10.0
+
+    general_goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      stateful: true
+      xy_goal_tolerance: 0.10
+      yaw_goal_tolerance: 0.25
+
+    FollowPath:
+      plugin: "my_mppi_controller::MPPIController"
+
+      # 予測 4.0 s。0.5 m/s なら予測距離は約 2.0 m(< prune_distance 3.0
+      # < raceline の lookahead_m 4.0)。急コーナーの出口まで見える長さが要る
+      # (1.4 s では逸脱した)。dt 0.1 は同じ wz_std でも 1 つのノイズが 0.1 s
+      # 続くので候補軌道が広く散らばり、急コーナーを曲がる候補が出やすい。
+      # vx_max を上げるときは prune_distance >= vx_max * 4.0 と lookahead_m も伸ばす
+      # (シムでは vx_max 1.0 / wz_max 2.2 / prune 4.5 / lookahead 5.5 で 4.1 cm)。
+      time_steps: 15
+      model_dt: 0.1
+      batch_size: 1000
+      iteration_count: 1
+      # v はノイズを乗せずに上書きするが、0 にするとコストの計算で 0 割りになるので残す。
+      vx_std: 0.20
+      vy_std: 0.0
+      # ステア角 δ のノイズ [rad]
+      wz_std: 0.15
+      # Humble は cvx を [vx_min, vx_max] でクリップする。ランプやタイムアウト時の 0 が
+      # 潰れないよう vx_min は 0.0、vx_max はゾーン速度の最大値以上にする。
+      vx_max: 3.5
+      vx_min: 0.0
+      vy_max: 0.0
+      ax_max: 2.0
+      ax_min: -2.0
+      ay_max: 0.0
+      az_max: 2.0
+
+      # 自転車モデル
+      steer_time_constant: 0.08   # [s] サーボの1次遅れ。指令曲率 -> 実ヨー曲率の応答で測って決める
+      steer_rate_max: 4.0         # [rad/s]
+      steer_max: 0.30             # [rad] vehicle_params の delta_max (0.3003) 以下にする
+
+      # スピード固定モード
+      speed_mode: "fixed_topic"
+      target_speed_topic: "/target_speed"
+      target_speed_timeout: 0.3   # [s] 未受信・途絶で v=0
+      accel_max: 2.0              # [m/s^2]
+      decel_max: 2.0              # [m/s^2] 惰性で出せる減速度以下にする(ドライバはブレーキを使わない)
+      speed_restart_margin: 0.5   # [m/s] stall_stop の cmd_min (0.1) より大きくする
+
+      prune_distance: 6.0
+      max_robot_pose_search_dist: 2.0
+      transform_tolerance: 0.20
+      temperature: 0.3
+      gamma: 0.015
+      motion_model: "Bicycle"
+      visualize: true
+      reset_period: 1.0
+      regenerate_noises: false
+
+      TrajectoryVisualizer:
+        trajectory_step: 5
+        time_step: 3
+
+      # 初期構成では経路追従だけを評価する。CostCritic と
+      # ObstaclesCritic は Costmap の障害物レイヤ追加時に同時に有効化する。
+      critics: [
+        "ConstraintCritic",
+        "GoalCritic",
+        "GoalAngleCritic",
+        "PathAlignCritic",
+        "PathFollowCritic",
+        "PathAngleCritic",
+        "PreferForwardCritic"
+      ]
+
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 1.5
+        threshold_to_consider: 0.2
+      GoalAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.0
+        threshold_to_consider: 0.5
+      PreferForwardCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 0.5
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        # 「経路の上に乗れ」。精度の主役。14 -> 30 で 11.9 -> 10.5 cm。
+        cost_weight: 30.0
+        max_path_occupancy_ratio: 0.05
+        trajectory_point_step: 4
+        threshold_to_consider: 0.5
+        # 候補軌道がこの点数(経路は 0.05 m 間隔)より先へ届いてから効かせる。
+        # 20(1 m)-> 5(0.25 m)で予測の早い段階から効き、11.9 -> 9.2 cm。
+        offset_from_furthest: 5
+        use_path_orientations: true
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 10.0
+        offset_from_furthest: 5
+        threshold_to_consider: 0.5
+      PathAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        offset_from_furthest: 4
+        threshold_to_consider: 0.5
+        max_angle_to_furthest: 1.0
+        forward_preference: true
+
+# controller_server は Costmap2DROS を必ず所有するため、空のグリッドを odom 座標系で
+# 起動する。MPPI が map の Path をここへ変換するためにも必要。
+#
+# Humble の注意(どちらも controller_server が起動時に abort する。実測):
+#   * plugins: [] / filters: [] のような空リストは rclcpp が型を決められず
+#     「No parameter value set」になる。filters は書かない(既定が空)。plugins は
+#     書かないと static/obstacle/inflation の 3 層が既定で入るので、障害物の
+#     入力源を持たない inflation_layer を 1 つだけ置く(何も膨らまないのでグリッド
+#     は常に空)。
+#   * width / height は int 型。8.0 と書くと「invalid type」になる。
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: false
+      global_frame: odom
+      robot_base_frame: base_link
+      rolling_window: true
+      # MPPI は経路を costmap の外に出た最初の点で打ち切る(Humble の
+      # PathHandler)。半幅は prune_distance より長くすること。8 のときは
+      # prune_distance 6.0 でも直線で 4 m 先までしか経路が残らなかった。
+      # グリッドは常に空なので広げても負荷はほぼ増えない。
+      width: 14
+      height: 14
+      resolution: 0.05
+      update_frequency: 10.0
+      publish_frequency: 2.0
+      transform_tolerance: 0.20
+      robot_radius: 0.12
+      track_unknown_space: false
+      always_send_full_costmap: false
+      plugins: ["inflation_layer"]
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.15
+
+lifecycle_manager_my_mppi:
+  ros__parameters:
+    use_sim_time: false
+    autostart: true
+    bond_timeout: 4.0
+    node_names: ["controller_server"]

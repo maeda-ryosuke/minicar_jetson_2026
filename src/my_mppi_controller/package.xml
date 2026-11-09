@@ -29,6 +29,10 @@
   <depend>libomp-dev</depend>
   <depend>benchmark</depend>
   <depend>xsimd</depend>
+  <!-- [ADD] launch/my_mppi.launch.py 用 -->
+  <exec_depend>minicar_bringup</exec_depend>
+  <exec_depend>nav2_controller</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

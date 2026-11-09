@@ -1,3 +1,48 @@
+# my_mppi_controller(自転車モデル+スピード固定)
+
+nav2_mppi_controller 1.1.20(Humble)をフォークし、次の2点を足したもの。計画は jetson_humble/PLAN.md。
+
+1. `motion_model: "Bicycle"`:制御入力を v とステア角 δ にし、自転車モデルで軌道を予測する。
+   `cwz` を δ [rad] として扱い、δ はサーボの1次遅れ(`α = 1 - exp(-dt/τ)`)とレート上限を通して
+   指令に追従する。ヨーレートは `wz = v·tan(δ)/L`。出力の `angular.z` も同じ式で作る。
+2. `speed_mode: "fixed_topic"`:v を `/target_speed`(区間の目標速度、`std_msgs/Float32`)から作り、δ だけを最適化する。
+
+## 追加したパラメータ(`FollowPath.` の下)
+
+| パラメータ | 既定値 | 説明 |
+|---|---|---|
+| `motion_model` | `DiffDrive` | `Bicycle` を追加 |
+| `wheelbase` | 0.257 | [m] launch が vehicle_params.yaml から注入する |
+| `steer_time_constant` | 0.08 | [s] δ の1次遅れの時定数 |
+| `steer_rate_max` | 4.0 | [rad/s] δ の変化速度の上限 |
+| `steer_max` | 0.30 | [rad] δ 指令の上限。vehicle_params の `delta_max`(0.3003)以下にする(超えると motor_driver が切り捨て、予測と合わない) |
+| `speed_mode` | `sampled` | `sampled`(元の挙動)/ `fixed_topic` |
+| `target_speed_topic` | `/target_speed` | 目標速度のトピック |
+| `target_speed_timeout` | 0.3 | [s] 一度も受信していない、または最後の受信からこれを超えたら v=0 |
+| `accel_max` | 2.0 | [m/s²] 目標速度へ上げるときの加速度 |
+| `decel_max` | 2.0 | [m/s²] 目標速度へ下げるときの減速度。惰性で出せる減速度以下にする |
+| `speed_restart_margin` | 0.5 | [m/s] 加速の起点を「前回の出力」と「実速度 + これ」の小さいほうにする。stall_stop の `cmd_min`(0.1)より大きくする |
+
+`fixed_topic` で使うときの注意:
+
+- `vx_min: 0.0`、`vx_max` はゾーン速度の最大値以上にする(Humble は v を `[vx_min, vx_max]` でクリップする)。
+- `vx_std` は 0 にしない(v にノイズは乗せないが、コストの計算で 0 割りになる)。
+- `/speed_limit` は出さない(vx 系の上限が縮む)。
+- safety_node を挟む経路では使わない(v だけが加速制限され、ドライバで復元する δ がずれる)。
+
+## 起動
+
+```bash
+# controller_server だけ
+ros2 launch my_mppi_controller my_mppi.launch.py
+# 目標速度ノードだけ(エリア定義は speed_zone_publisher/config/zones.yaml)
+ros2 launch speed_zone_publisher speed_zone_publisher.launch.py
+# 実機一式(race.launch.py の MPPI を差し替えたもの)
+ros2 launch minicar_bringup race_bicycle.launch.py initial_x:=0.0 initial_y:=0.0 initial_yaw:=0.0
+```
+
+---
+
 # Model Predictive Path Integral Controller
 
 ![](media/demo.gif)
