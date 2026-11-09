@@ -556,9 +556,9 @@ void Optimizer::updateFixedSpeed()
     };
 
   // 起点は「前回の出力」と「実速度 + margin」の小さいほう。発進やスタック復帰の後に、
-  // 実速度より大きく離れた v から加速し直さないため
-  const float start = std::min(
-    last_vx_, static_cast<float>(state_.speed.linear.x) + speed_restart_margin_);
+  // 実速度より大きく離れた v から加速し直さないため。後退中(実速度が負)でも 0 未満にはしない
+  const float start = std::max(
+    0.0f, std::min(last_vx_, static_cast<float>(state_.speed.linear.x) + speed_restart_margin_));
   const float v0 = move_toward(start, control_period_);
   for (unsigned int t = 0; t < settings_.time_steps; ++t) {
     fixed_vx_(t) = move_toward(v0, settings_.model_dt * t);

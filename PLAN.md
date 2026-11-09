@@ -103,7 +103,7 @@ jetson_humble/
   - `target_speed_topic`(`std_msgs/Float32`、[m/s])を購読する。値は区間の目標速度
   - スピード方向のノイズを0にする(全サンプルが同じ v 列を使う)
   - 毎周期、目標速度に向けて加減速を制限した v の列を作り、制御列の v を上書きする(ウォームスタートで引き継がない)
-    - 加速:`min(前回の出力, 実速度 + speed_restart_margin)` を起点に `accel_max` で上げる。実速度は computeVelocityCommands に渡される robot_speed を使う。発進・スタック復帰後・タイムアウトからの復帰も、この処理で扱える
+    - 加速:`min(前回の出力, 実速度 + speed_restart_margin)`(0 未満にはしない)を起点に `accel_max` で上げる。実速度は computeVelocityCommands に渡される robot_speed を使う。発進・スタック復帰後・タイムアウトからの復帰も、この処理で扱える
     - 減速:前回の出力から `decel_max` で下げる
     - ホライズン内の v 列もこのランプで埋める。predict() は `state.vx[t] = cvx[t-1]` なので、軌道の計算にもランプが入る(predict() の変更は不要)
   - 一度も受信していないとき、または最後の受信から `target_speed_timeout` を超えたら v=0 にする(`/target_speed` が無ければ走らない。切り分けしやすくするため)

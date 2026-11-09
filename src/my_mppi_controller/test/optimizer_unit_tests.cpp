@@ -649,6 +649,10 @@ TEST(OptimizerTests, FixedSpeedTests)
   vx = optimizer_tester.fixedSpeedWrapper(0.0f, 3.0f);
   EXPECT_NEAR(vx(0), 0.5f + dv_ctrl, 1e-5);
 
+  // 後退中(実速度が負)でも起点は 0 未満にならない
+  vx = optimizer_tester.fixedSpeedWrapper(-2.0f, 3.0f);
+  EXPECT_NEAR(vx(0), dv_ctrl, 1e-5);
+
   // 最後の受信から timeout を超えたら v=0
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
   vx = optimizer_tester.fixedSpeedWrapper(3.0f, 3.0f);

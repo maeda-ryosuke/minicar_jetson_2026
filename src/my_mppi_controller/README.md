@@ -21,7 +21,7 @@ nav2_mppi_controller 1.1.20(Humble)をフォークし、次の2点を足した�
 | `target_speed_timeout` | 0.3 | [s] 一度も受信していない、または最後の受信からこれを超えたら v=0 |
 | `accel_max` | 2.0 | [m/s²] 目標速度へ上げるときの加速度 |
 | `decel_max` | 2.0 | [m/s²] 目標速度へ下げるときの減速度。惰性で出せる減速度以下にする |
-| `speed_restart_margin` | 0.5 | [m/s] 加速の起点を「前回の出力」と「実速度 + これ」の小さいほうにする。stall_stop の `cmd_min`(0.1)より大きくする |
+| `speed_restart_margin` | 0.5 | [m/s] 加速の起点を「前回の出力」と「実速度 + これ」の小さいほう(0 未満にはしない)にする。stall_stop の `cmd_min`(0.1)より大きくする |
 
 `fixed_topic` で使うときの注意:
 
