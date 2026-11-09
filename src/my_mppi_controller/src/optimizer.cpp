@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_mppi_controller/optimizer.hpp"
+#include "my_mppi_controller/optimizer.hpp"
 
 #include <limits>
 #include <memory>
@@ -26,7 +26,7 @@
 
 #include "nav2_costmap_2d/costmap_filters/filter_values.hpp"
 
-namespace mppi
+namespace my_mppi
 {
 
 using namespace xt::placeholders;  // NOLINT
@@ -451,4 +451,4 @@ models::Trajectories & Optimizer::getGeneratedTrajectories()
   return generated_trajectories_;
 }
 
-}  // namespace mppi
+}  // namespace my_mppi

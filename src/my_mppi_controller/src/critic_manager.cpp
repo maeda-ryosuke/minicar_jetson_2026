@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_mppi_controller/critic_manager.hpp"
+#include "my_mppi_controller/critic_manager.hpp"
 
-namespace mppi
+namespace my_mppi
 {
 
 void CriticManager::on_configure(
@@ -43,7 +43,7 @@ void CriticManager::loadCritics()
 {
   if (!loader_) {
     loader_ = std::make_unique<pluginlib::ClassLoader<critics::CriticFunction>>(
-      "nav2_mppi_controller", "mppi::critics::CriticFunction");
+      "my_mppi_controller", "my_mppi::critics::CriticFunction");
   }
 
   critics_.clear();
@@ -61,7 +61,7 @@ void CriticManager::loadCritics()
 
 std::string CriticManager::getFullName(const std::string & name)
 {
-  return "mppi::critics::" + name;
+  return "my_mppi::critics::" + name;
 }
 
 void CriticManager::evalTrajectoriesScores(
@@ -75,4 +75,4 @@ void CriticManager::evalTrajectoriesScores(
   }
 }
 
-}  // namespace mppi
+}  // namespace my_mppi

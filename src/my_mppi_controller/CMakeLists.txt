@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(nav2_mppi_controller)
+project(my_mppi_controller)
 
 add_definitions(-DXTENSOR_ENABLE_XSIMD)
 add_definitions(-DXTENSOR_USE_XSIMD)
@@ -67,7 +67,7 @@ endif()
 # If building one the same hardware to be deployed on, try `-march=native`!
 add_compile_options(-O3 -finline-limit=10000000 -ffp-contract=fast -ffast-math -mtune=generic)
 
-add_library(mppi_controller SHARED
+add_library(my_mppi_controller_lib SHARED
   src/controller.cpp
   src/optimizer.cpp
   src/critic_manager.cpp
@@ -77,7 +77,7 @@ add_library(mppi_controller SHARED
   src/noise_generator.cpp
 )
 
-add_library(mppi_critics SHARED
+add_library(my_mppi_critics SHARED
   src/critics/obstacles_critic.cpp
   src/critics/cost_critic.cpp
   src/critics/goal_critic.cpp
@@ -92,7 +92,7 @@ add_library(mppi_critics SHARED
   src/critics/velocity_deadband_critic.cpp
 )
 
-set(libraries mppi_controller mppi_critics)
+set(libraries my_mppi_controller_lib my_mppi_critics)
 
 foreach(lib IN LISTS libraries)
   target_compile_options(${lib} PUBLIC -fconcepts)
@@ -101,7 +101,7 @@ foreach(lib IN LISTS libraries)
   ament_target_dependencies(${lib} ${dependencies_pkgs})
 endforeach()
 
-install(TARGETS mppi_controller mppi_critics
+install(TARGETS my_mppi_controller_lib my_mppi_critics
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
@@ -124,6 +124,6 @@ ament_export_libraries(${libraries})
 ament_export_dependencies(${dependencies_pkgs})
 ament_export_include_directories(include)
 pluginlib_export_plugin_description_file(nav2_core mppic.xml)
-pluginlib_export_plugin_description_file(nav2_mppi_controller critics.xml)
+pluginlib_export_plugin_description_file(my_mppi_controller critics.xml)
 
 ament_package()

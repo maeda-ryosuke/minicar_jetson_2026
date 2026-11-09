@@ -17,9 +17,9 @@
 
 #include "gtest/gtest.h"
 #include "rclcpp/rclcpp.hpp"
-#include "nav2_mppi_controller/motion_models.hpp"
-#include "nav2_mppi_controller/models/state.hpp"
-#include "nav2_mppi_controller/models/control_sequence.hpp"
+#include "my_mppi_controller/motion_models.hpp"
+#include "my_mppi_controller/models/state.hpp"
+#include "my_mppi_controller/models/control_sequence.hpp"
 
 // Tests motion models
 
@@ -31,7 +31,7 @@ public:
 };
 RosLockGuard g_rclcpp;
 
-using namespace mppi;  // NOLINT
+using namespace my_mppi;  // NOLINT
 
 TEST(MotionModelTests, DiffDriveTest)
 {

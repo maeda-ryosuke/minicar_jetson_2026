@@ -14,12 +14,12 @@
 
 #include <stdint.h>
 #include <chrono>
-#include "nav2_mppi_controller/controller.hpp"
-#include "nav2_mppi_controller/tools/utils.hpp"
+#include "my_mppi_controller/controller.hpp"
+#include "my_mppi_controller/tools/utils.hpp"
 
 // #define BENCHMARK_TESTING
 
-namespace nav2_mppi_controller
+namespace my_mppi_controller
 {
 
 void MPPIController::configure(
@@ -130,7 +130,7 @@ void MPPIController::setSpeedLimit(const double & speed_limit, const bool & perc
   optimizer_.setSpeedLimit(speed_limit, percentage);
 }
 
-}  // namespace nav2_mppi_controller
+}  // namespace my_mppi_controller
 
 #include "pluginlib/class_list_macros.hpp"
-PLUGINLIB_EXPORT_CLASS(nav2_mppi_controller::MPPIController, nav2_core::Controller)
+PLUGINLIB_EXPORT_CLASS(my_mppi_controller::MPPIController, nav2_core::Controller)

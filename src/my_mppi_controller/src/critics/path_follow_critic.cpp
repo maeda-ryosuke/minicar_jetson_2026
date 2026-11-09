@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_mppi_controller/critics/path_follow_critic.hpp"
+#include "my_mppi_controller/critics/path_follow_critic.hpp"
 
 #include <xtensor/xmath.hpp>
 #include <xtensor/xsort.hpp>
 
-namespace mppi::critics
+namespace my_mppi::critics
 {
 
 void PathFollowCritic::initialize()
@@ -70,10 +70,10 @@ void PathFollowCritic::score(CriticData & data)
   data.costs += xt::pow(weight_ * std::move(dists), power_);
 }
 
-}  // namespace mppi::critics
+}  // namespace my_mppi::critics
 
 #include <pluginlib/class_list_macros.hpp>
 
 PLUGINLIB_EXPORT_CLASS(
-  mppi::critics::PathFollowCritic,
-  mppi::critics::CriticFunction)
+  my_mppi::critics::PathFollowCritic,
+  my_mppi::critics::CriticFunction)

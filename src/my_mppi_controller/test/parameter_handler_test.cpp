@@ -17,7 +17,7 @@
 
 #include "gtest/gtest.h"
 #include "rclcpp/rclcpp.hpp"
-#include "nav2_mppi_controller/tools/parameters_handler.hpp"
+#include "my_mppi_controller/tools/parameters_handler.hpp"
 
 // Tests parameter handler object
 
@@ -30,7 +30,7 @@ public:
 
 RosLockGuard g_rclcpp;
 
-using namespace mppi;  // NOLINT
+using namespace my_mppi;  // NOLINT
 
 class ParametersHandlerWrapper : public ParametersHandler
 {
@@ -48,7 +48,7 @@ public:
   }
 };
 
-using namespace mppi;  // NOLINT
+using namespace my_mppi;  // NOLINT
 
 TEST(ParameterHandlerTest, asTypeConversionTest)
 {

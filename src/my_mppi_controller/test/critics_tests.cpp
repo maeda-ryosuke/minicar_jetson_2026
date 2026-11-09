@@ -17,20 +17,20 @@
 
 #include "gtest/gtest.h"
 #include "rclcpp/rclcpp.hpp"
-#include "nav2_mppi_controller/tools/utils.hpp"
-#include "nav2_mppi_controller/motion_models.hpp"
-#include "nav2_mppi_controller/critics/constraint_critic.hpp"
-#include "nav2_mppi_controller/critics/goal_angle_critic.hpp"
-#include "nav2_mppi_controller/critics/goal_critic.hpp"
-#include "nav2_mppi_controller/critics/obstacles_critic.hpp"
-#include "nav2_mppi_controller/critics/cost_critic.hpp"
-#include "nav2_mppi_controller/critics/path_align_critic.hpp"
-#include "nav2_mppi_controller/critics/path_align_legacy_critic.hpp"
-#include "nav2_mppi_controller/critics/path_angle_critic.hpp"
-#include "nav2_mppi_controller/critics/path_follow_critic.hpp"
-#include "nav2_mppi_controller/critics/prefer_forward_critic.hpp"
-#include "nav2_mppi_controller/critics/twirling_critic.hpp"
-#include "nav2_mppi_controller/critics/velocity_deadband_critic.hpp"
+#include "my_mppi_controller/tools/utils.hpp"
+#include "my_mppi_controller/motion_models.hpp"
+#include "my_mppi_controller/critics/constraint_critic.hpp"
+#include "my_mppi_controller/critics/goal_angle_critic.hpp"
+#include "my_mppi_controller/critics/goal_critic.hpp"
+#include "my_mppi_controller/critics/obstacles_critic.hpp"
+#include "my_mppi_controller/critics/cost_critic.hpp"
+#include "my_mppi_controller/critics/path_align_critic.hpp"
+#include "my_mppi_controller/critics/path_align_legacy_critic.hpp"
+#include "my_mppi_controller/critics/path_angle_critic.hpp"
+#include "my_mppi_controller/critics/path_follow_critic.hpp"
+#include "my_mppi_controller/critics/prefer_forward_critic.hpp"
+#include "my_mppi_controller/critics/twirling_critic.hpp"
+#include "my_mppi_controller/critics/velocity_deadband_critic.hpp"
 #include "nav2_core/exceptions.hpp"
 #include "utils_test.cpp"  // NOLINT
 
@@ -38,9 +38,9 @@
 
 // ROS lock used from utils_test.cpp
 
-using namespace mppi;  // NOLINT
-using namespace mppi::critics;  // NOLINT
-using namespace mppi::utils;  // NOLINT
+using namespace my_mppi;  // NOLINT
+using namespace my_mppi::critics;  // NOLINT
+using namespace my_mppi::utils;  // NOLINT
 using xt::evaluation_strategy::immediate;
 
 TEST(CriticTests, ConstraintsCritic)

@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_mppi_controller/critics/path_align_critic.hpp"
+#include "my_mppi_controller/critics/path_align_critic.hpp"
 
 #include <xtensor/xfixed.hpp>
 #include <xtensor/xmath.hpp>
 
-namespace mppi::critics
+namespace my_mppi::critics
 {
 
 using namespace xt::placeholders;  // NOLINT
@@ -135,10 +135,10 @@ void PathAlignCritic::score(CriticData & data)
   data.costs += xt::pow(std::move(cost) * weight_, power_);
 }
 
-}  // namespace mppi::critics
+}  // namespace my_mppi::critics
 
 #include <pluginlib/class_list_macros.hpp>
 
 PLUGINLIB_EXPORT_CLASS(
-  mppi::critics::PathAlignCritic,
-  mppi::critics::CriticFunction)
+  my_mppi::critics::PathAlignCritic,
+  my_mppi::critics::CriticFunction)

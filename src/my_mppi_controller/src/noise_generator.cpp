@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_mppi_controller/tools/noise_generator.hpp"
+#include "my_mppi_controller/tools/noise_generator.hpp"
 
 #include <memory>
 #include <mutex>
@@ -20,11 +20,11 @@
 #include <xtensor/xrandom.hpp>
 #include <xtensor/xnoalias.hpp>
 
-namespace mppi
+namespace my_mppi
 {
 
 void NoiseGenerator::initialize(
-  mppi::models::OptimizerSettings & settings, bool is_holonomic,
+  my_mppi::models::OptimizerSettings & settings, bool is_holonomic,
   const std::string & name, ParametersHandler * param_handler)
 {
   settings_ = settings;
@@ -73,7 +73,7 @@ void NoiseGenerator::setNoisedControls(
   xt::noalias(state.cwz) = control_sequence.wz + noises_wz_;
 }
 
-void NoiseGenerator::reset(mppi::models::OptimizerSettings & settings, bool is_holonomic)
+void NoiseGenerator::reset(my_mppi::models::OptimizerSettings & settings, bool is_holonomic)
 {
   settings_ = settings;
   is_holonomic_ = is_holonomic;
@@ -121,4 +121,4 @@ void NoiseGenerator::generateNoisedControls()
   }
 }
 
-}  // namespace mppi
+}  // namespace my_mppi

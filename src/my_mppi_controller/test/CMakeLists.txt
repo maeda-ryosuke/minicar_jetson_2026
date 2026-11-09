@@ -22,7 +22,7 @@ foreach(name IN LISTS TEST_NAMES)
   )
 
   target_link_libraries(${name}
-    mppi_controller
+    my_mppi_controller_lib
   )
 
   if(${TEST_DEBUG_INFO})
@@ -34,7 +34,7 @@ endforeach()
 # This is a special case requiring linking against the critics library
 ament_add_gtest(critics_tests critics_tests.cpp)
 ament_target_dependencies(critics_tests ${dependencies_pkgs})
-target_link_libraries(critics_tests mppi_controller mppi_critics)
+target_link_libraries(critics_tests my_mppi_controller_lib my_mppi_critics)
 if(${TEST_DEBUG_INFO})
   target_compile_definitions(critics_tests PUBLIC -DTEST_DEBUG_INFO)
 endif()

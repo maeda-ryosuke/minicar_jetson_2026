@@ -20,7 +20,7 @@
 #include <nav2_costmap_2d/costmap_2d.hpp>
 #include <nav2_costmap_2d/costmap_2d_ros.hpp>
 
-#include "nav2_mppi_controller/controller.hpp"
+#include "my_mppi_controller/controller.hpp"
 
 #include "utils/utils.hpp"
 

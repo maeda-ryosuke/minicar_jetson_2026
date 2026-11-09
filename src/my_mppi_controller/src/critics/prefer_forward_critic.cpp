@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_mppi_controller/critics/prefer_forward_critic.hpp"
+#include "my_mppi_controller/critics/prefer_forward_critic.hpp"
 
-namespace mppi::critics
+namespace my_mppi::critics
 {
 
 void PreferForwardCritic::initialize()
@@ -46,10 +46,10 @@ void PreferForwardCritic::score(CriticData & data)
         backward_motion) * data.model_dt, {1}, immediate) * weight_, power_);
 }
 
-}  // namespace mppi::critics
+}  // namespace my_mppi::critics
 
 #include <pluginlib/class_list_macros.hpp>
 
 PLUGINLIB_EXPORT_CLASS(
-  mppi::critics::PreferForwardCritic,
-  mppi::critics::CriticFunction)
+  my_mppi::critics::PreferForwardCritic,
+  my_mppi::critics::CriticFunction)

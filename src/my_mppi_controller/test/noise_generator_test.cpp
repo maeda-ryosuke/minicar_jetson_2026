@@ -18,11 +18,11 @@
 #include "gtest/gtest.h"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
-#include "nav2_mppi_controller/tools/noise_generator.hpp"
-#include "nav2_mppi_controller/tools/parameters_handler.hpp"
-#include "nav2_mppi_controller/models/optimizer_settings.hpp"
-#include "nav2_mppi_controller/models/state.hpp"
-#include "nav2_mppi_controller/models/control_sequence.hpp"
+#include "my_mppi_controller/tools/noise_generator.hpp"
+#include "my_mppi_controller/tools/parameters_handler.hpp"
+#include "my_mppi_controller/models/optimizer_settings.hpp"
+#include "my_mppi_controller/models/state.hpp"
+#include "my_mppi_controller/models/control_sequence.hpp"
 
 // Tests noise generator object
 
@@ -34,13 +34,13 @@ public:
 };
 RosLockGuard g_rclcpp;
 
-using namespace mppi;  // NOLINT
+using namespace my_mppi;  // NOLINT
 
 TEST(NoiseGeneratorTest, NoiseGeneratorLifecycle)
 {
   // Tests shuts down internal thread cleanly
   NoiseGenerator generator;
-  mppi::models::OptimizerSettings settings;
+  my_mppi::models::OptimizerSettings settings;
   settings.batch_size = 100;
   settings.time_steps = 25;
 
@@ -60,7 +60,7 @@ TEST(NoiseGeneratorTest, NoiseGeneratorMain)
   node->declare_parameter("test_name.regenerate_noises", rclcpp::ParameterValue(true));
   ParametersHandler handler(node);
   NoiseGenerator generator;
-  mppi::models::OptimizerSettings settings;
+  my_mppi::models::OptimizerSettings settings;
   settings.batch_size = 100;
   settings.time_steps = 25;
   settings.sampling_std.vx = 0.1;
@@ -68,7 +68,7 @@ TEST(NoiseGeneratorTest, NoiseGeneratorMain)
   settings.sampling_std.wz = 0.1;
 
   // Populate a potential control sequence
-  mppi::models::ControlSequence control_sequence;
+  my_mppi::models::ControlSequence control_sequence;
   control_sequence.reset(25);
   for (unsigned int i = 0; i != control_sequence.vx.shape(0); i++) {
     control_sequence.vx(i) = i;
@@ -76,7 +76,7 @@ TEST(NoiseGeneratorTest, NoiseGeneratorMain)
     control_sequence.wz(i) = i;
   }
 
-  mppi::models::State state;
+  my_mppi::models::State state;
   state.reset(settings.batch_size, settings.time_steps);
 
   // Request an update with no noise yet generated, should result in identical outputs

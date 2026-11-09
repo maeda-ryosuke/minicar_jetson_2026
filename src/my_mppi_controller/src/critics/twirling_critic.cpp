@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_mppi_controller/critics/twirling_critic.hpp"
+#include "my_mppi_controller/critics/twirling_critic.hpp"
 
-namespace mppi::critics
+namespace my_mppi::critics
 {
 
 void TwirlingCritic::initialize()
@@ -41,10 +41,10 @@ void TwirlingCritic::score(CriticData & data)
   data.costs += xt::pow(xt::mean(wz, {1}, immediate) * weight_, power_);
 }
 
-}  // namespace mppi::critics
+}  // namespace my_mppi::critics
 
 #include <pluginlib/class_list_macros.hpp>
 
 PLUGINLIB_EXPORT_CLASS(
-  mppi::critics::TwirlingCritic,
-  mppi::critics::CriticFunction)
+  my_mppi::critics::TwirlingCritic,
+  my_mppi::critics::CriticFunction)

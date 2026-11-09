@@ -14,10 +14,10 @@
 // limitations under the License.
 
 #include <cmath>
-#include "nav2_mppi_controller/critics/cost_critic.hpp"
+#include "my_mppi_controller/critics/cost_critic.hpp"
 #include "nav2_core/exceptions.hpp"
 
-namespace mppi::critics
+namespace my_mppi::critics
 {
 
 void CostCritic::initialize()
@@ -222,10 +222,10 @@ float CostCritic::costAtPose(float x, float y)
   return collision_checker_.pointCost(x_i, y_i);
 }
 
-}  // namespace mppi::critics
+}  // namespace my_mppi::critics
 
 #include <pluginlib/class_list_macros.hpp>
 
 PLUGINLIB_EXPORT_CLASS(
-  mppi::critics::CostCritic,
-  mppi::critics::CriticFunction)
+  my_mppi::critics::CostCritic,
+  my_mppi::critics::CriticFunction)

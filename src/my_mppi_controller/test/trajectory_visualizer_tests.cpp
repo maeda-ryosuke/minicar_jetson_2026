@@ -17,7 +17,7 @@
 
 #include "gtest/gtest.h"
 #include "rclcpp/rclcpp.hpp"
-#include "nav2_mppi_controller/tools/trajectory_visualizer.hpp"
+#include "my_mppi_controller/tools/trajectory_visualizer.hpp"
 
 // Tests trajectory visualization
 
@@ -29,7 +29,7 @@ public:
 };
 RosLockGuard g_rclcpp;
 
-using namespace mppi;  // NOLINT
+using namespace my_mppi;  // NOLINT
 
 TEST(TrajectoryVisualizerTests, StateTransition)
 {

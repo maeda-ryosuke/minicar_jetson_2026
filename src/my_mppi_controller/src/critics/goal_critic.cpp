@@ -13,9 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_mppi_controller/critics/goal_critic.hpp"
+#include "my_mppi_controller/critics/goal_critic.hpp"
 
-namespace mppi::critics
+namespace my_mppi::critics
 {
 
 using xt::evaluation_strategy::immediate;
@@ -56,8 +56,8 @@ void GoalCritic::score(CriticData & data)
   data.costs += xt::pow(xt::mean(dists, {1}, immediate) * weight_, power_);
 }
 
-}  // namespace mppi::critics
+}  // namespace my_mppi::critics
 
 #include <pluginlib/class_list_macros.hpp>
 
-PLUGINLIB_EXPORT_CLASS(mppi::critics::GoalCritic, mppi::critics::CriticFunction)
+PLUGINLIB_EXPORT_CLASS(my_mppi::critics::GoalCritic, my_mppi::critics::CriticFunction)

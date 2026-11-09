@@ -13,11 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_mppi_controller/critics/path_angle_critic.hpp"
+#include "my_mppi_controller/critics/path_angle_critic.hpp"
 
 #include <math.h>
 
-namespace mppi::critics
+namespace my_mppi::critics
 {
 
 void PathAngleCritic::initialize()
@@ -98,10 +98,10 @@ void PathAngleCritic::score(CriticData & data)
   }
 }
 
-}  // namespace mppi::critics
+}  // namespace my_mppi::critics
 
 #include <pluginlib/class_list_macros.hpp>
 
 PLUGINLIB_EXPORT_CLASS(
-  mppi::critics::PathAngleCritic,
-  mppi::critics::CriticFunction)
+  my_mppi::critics::PathAngleCritic,
+  my_mppi::critics::CriticFunction)

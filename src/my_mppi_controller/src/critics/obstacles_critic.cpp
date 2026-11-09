@@ -13,10 +13,10 @@
 // limitations under the License.
 
 #include <cmath>
-#include "nav2_mppi_controller/critics/obstacles_critic.hpp"
+#include "my_mppi_controller/critics/obstacles_critic.hpp"
 #include "nav2_core/exceptions.hpp"
 
-namespace mppi::critics
+namespace my_mppi::critics
 {
 
 void ObstaclesCritic::initialize()
@@ -236,10 +236,10 @@ CollisionCost ObstaclesCritic::costAtPose(float x, float y, float theta)
   return collision_cost;
 }
 
-}  // namespace mppi::critics
+}  // namespace my_mppi::critics
 
 #include <pluginlib/class_list_macros.hpp>
 
 PLUGINLIB_EXPORT_CLASS(
-  mppi::critics::ObstaclesCritic,
-  mppi::critics::CriticFunction)
+  my_mppi::critics::ObstaclesCritic,
+  my_mppi::critics::CriticFunction)

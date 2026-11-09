@@ -1,6 +1,6 @@
 <class_libraries>
-  <library path="mppi_controller">
-    <class type="nav2_mppi_controller::MPPIController" base_class_type="nav2_core::Controller">
+  <library path="my_mppi_controller_lib">
+    <class type="my_mppi_controller::MPPIController" base_class_type="nav2_core::Controller">
       <description>MPPI Controller for Nav2</description>
     </class>
   </library>

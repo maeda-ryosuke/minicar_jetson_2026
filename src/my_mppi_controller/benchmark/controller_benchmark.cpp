@@ -28,8 +28,8 @@
 #include <xtensor/xio.hpp>
 #include <xtensor/xview.hpp>
 
-#include "nav2_mppi_controller/motion_models.hpp"
-#include "nav2_mppi_controller/controller.hpp"
+#include "my_mppi_controller/motion_models.hpp"
+#include "my_mppi_controller/controller.hpp"
 
 #include "utils.hpp"
 

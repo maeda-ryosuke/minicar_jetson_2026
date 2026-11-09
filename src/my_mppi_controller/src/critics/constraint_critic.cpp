@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_mppi_controller/critics/constraint_critic.hpp"
+#include "my_mppi_controller/critics/constraint_critic.hpp"
 
-namespace mppi::critics
+namespace my_mppi::critics
 {
 
 void ConstraintCritic::initialize()
@@ -74,8 +74,8 @@ void ConstraintCritic::score(CriticData & data)
       data.model_dt, {1}, immediate) * weight_, power_);
 }
 
-}  // namespace mppi::critics
+}  // namespace my_mppi::critics
 
 #include <pluginlib/class_list_macros.hpp>
 
-PLUGINLIB_EXPORT_CLASS(mppi::critics::ConstraintCritic, mppi::critics::CriticFunction)
+PLUGINLIB_EXPORT_CLASS(my_mppi::critics::ConstraintCritic, my_mppi::critics::CriticFunction)

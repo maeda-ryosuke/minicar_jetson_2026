@@ -17,7 +17,7 @@
 
 #include "gtest/gtest.h"
 #include "rclcpp/rclcpp.hpp"
-#include "nav2_mppi_controller/optimizer.hpp"
+#include "my_mppi_controller/optimizer.hpp"
 
 // Tests main optimizer functions
 
@@ -29,9 +29,9 @@ public:
 };
 RosLockGuard g_rclcpp;
 
-using namespace mppi;  // NOLINT
-using namespace mppi::critics;  // NOLINT
-using namespace mppi::utils;  // NOLINT
+using namespace my_mppi;  // NOLINT
+using namespace my_mppi::critics;  // NOLINT
+using namespace my_mppi::utils;  // NOLINT
 using xt::evaluation_strategy::immediate;
 
 class OptimizerTester : public Optimizer

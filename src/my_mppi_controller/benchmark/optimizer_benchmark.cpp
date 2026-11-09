@@ -29,10 +29,10 @@
 #include <xtensor/xio.hpp>
 #include <xtensor/xview.hpp>
 
-#include "nav2_mppi_controller/optimizer.hpp"
-#include "nav2_mppi_controller/motion_models.hpp"
+#include "my_mppi_controller/optimizer.hpp"
+#include "my_mppi_controller/motion_models.hpp"
 
-#include "nav2_mppi_controller/tools/parameters_handler.hpp"
+#include "my_mppi_controller/tools/parameters_handler.hpp"
 
 #include "utils.hpp"
 
@@ -79,7 +79,7 @@ void prepareAndRunBenchmark(
 
   printInfo(optimizer_settings, path_settings, critics);
   auto node = getDummyNode(optimizer_settings, critics);
-  auto parameters_handler = std::make_unique<mppi::ParametersHandler>(node);
+  auto parameters_handler = std::make_unique<my_mppi::ParametersHandler>(node);
   auto optimizer = getDummyOptimizer(node, costmap_ros, parameters_handler.get());
 
   // evalControl args

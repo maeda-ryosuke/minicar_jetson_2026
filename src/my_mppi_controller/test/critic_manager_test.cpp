@@ -17,7 +17,7 @@
 
 #include "gtest/gtest.h"
 #include "rclcpp/rclcpp.hpp"
-#include "nav2_mppi_controller/critic_manager.hpp"
+#include "my_mppi_controller/critic_manager.hpp"
 
 // Tests critic manager
 
@@ -29,8 +29,8 @@ public:
 };
 RosLockGuard g_rclcpp;
 
-using namespace mppi;  // NOLINT
-using namespace mppi::critics;  // NOLINT
+using namespace my_mppi;  // NOLINT
+using namespace my_mppi::critics;  // NOLINT
 
 class DummyCritic : public CriticFunction
 {
@@ -116,7 +116,7 @@ TEST(CriticManagerTests, BasicCriticOperations)
   EXPECT_TRUE(critic_manager.getDummyCriticScored());
 
   // This should get the full namespaced name of the critics
-  EXPECT_EQ(critic_manager.getFullNameWrapper("name"), std::string("mppi::critics::name"));
+  EXPECT_EQ(critic_manager.getFullNameWrapper("name"), std::string("my_mppi::critics::name"));
 }
 
 TEST(CriticManagerTests, CriticLoadingTest)

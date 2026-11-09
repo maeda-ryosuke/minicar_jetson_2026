@@ -14,11 +14,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_mppi_controller/tools/path_handler.hpp"
-#include "nav2_mppi_controller/tools/utils.hpp"
+#include "my_mppi_controller/tools/path_handler.hpp"
+#include "my_mppi_controller/tools/utils.hpp"
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
 
-namespace mppi
+namespace my_mppi
 {
 
 void PathHandler::initialize(
@@ -201,4 +201,4 @@ bool PathHandler::isWithinInversionTolerances(const geometry_msgs::msg::PoseStam
   return distance <= inversion_xy_tolerance_ && fabs(angle_distance) <= inversion_yaw_tolerance;
 }
 
-}  // namespace mppi
+}  // namespace my_mppi

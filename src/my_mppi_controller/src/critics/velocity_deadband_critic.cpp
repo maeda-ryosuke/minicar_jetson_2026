@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_mppi_controller/critics/velocity_deadband_critic.hpp"
+#include "my_mppi_controller/critics/velocity_deadband_critic.hpp"
 
-namespace mppi::critics
+namespace my_mppi::critics
 {
 
 void VelocityDeadbandCritic::initialize()
@@ -97,8 +97,8 @@ void VelocityDeadbandCritic::score(CriticData & data)
   return;
 }
 
-}  // namespace mppi::critics
+}  // namespace my_mppi::critics
 
 #include <pluginlib/class_list_macros.hpp>
 
-PLUGINLIB_EXPORT_CLASS(mppi::critics::VelocityDeadbandCritic, mppi::critics::CriticFunction)
+PLUGINLIB_EXPORT_CLASS(my_mppi::critics::VelocityDeadbandCritic, my_mppi::critics::CriticFunction)

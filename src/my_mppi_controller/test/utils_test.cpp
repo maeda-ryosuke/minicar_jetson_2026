@@ -18,8 +18,8 @@
 #include <xtensor/xrandom.hpp>
 #include "gtest/gtest.h"
 #include "rclcpp/rclcpp.hpp"
-#include "nav2_mppi_controller/tools/utils.hpp"
-#include "nav2_mppi_controller/models/path.hpp"
+#include "my_mppi_controller/tools/utils.hpp"
+#include "my_mppi_controller/models/path.hpp"
 
 // Tests noise generator object
 
@@ -31,8 +31,8 @@ public:
 };
 RosLockGuard g_rclcpp;
 
-using namespace mppi::utils;  // NOLINT
-using namespace mppi;  // NOLINT
+using namespace my_mppi::utils;  // NOLINT
+using namespace my_mppi;  // NOLINT
 
 class TestGoalChecker : public nav2_core::GoalChecker
 {
@@ -325,7 +325,7 @@ TEST(UtilsTests, SmootherTest)
   noisey_sequence.wz += noises;
   sequence_init = noisey_sequence;
 
-  std::array<mppi::models::Control, 4> history, history_init;
+  std::array<my_mppi::models::Control, 4> history, history_init;
   history[3].vx = 0.1;
   history[3].vy = 0.0;
   history[3].wz = 0.3;

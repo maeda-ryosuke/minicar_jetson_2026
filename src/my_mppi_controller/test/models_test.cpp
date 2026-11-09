@@ -14,10 +14,10 @@
 
 #include "gtest/gtest.h"
 #include "rclcpp/rclcpp.hpp"
-#include "nav2_mppi_controller/models/control_sequence.hpp"
-#include "nav2_mppi_controller/models/path.hpp"
-#include "nav2_mppi_controller/models/state.hpp"
-#include "nav2_mppi_controller/models/trajectories.hpp"
+#include "my_mppi_controller/models/control_sequence.hpp"
+#include "my_mppi_controller/models/path.hpp"
+#include "my_mppi_controller/models/state.hpp"
+#include "my_mppi_controller/models/trajectories.hpp"
 
 // Tests model classes with methods
 
@@ -29,7 +29,7 @@ public:
 };
 RosLockGuard g_rclcpp;
 
-using namespace mppi::models;  // NOLINT
+using namespace my_mppi::models;  // NOLINT
 
 TEST(ModelsTest, ControlSequenceTest)
 {

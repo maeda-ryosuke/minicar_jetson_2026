@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "nav2_mppi_controller/critics/goal_angle_critic.hpp"
+#include "my_mppi_controller/critics/goal_angle_critic.hpp"
 
-namespace mppi::critics
+namespace my_mppi::critics
 {
 
 void GoalAngleCritic::initialize()
@@ -49,10 +49,10 @@ void GoalAngleCritic::score(CriticData & data)
     weight_, power_);
 }
 
-}  // namespace mppi::critics
+}  // namespace my_mppi::critics
 
 #include <pluginlib/class_list_macros.hpp>
 
 PLUGINLIB_EXPORT_CLASS(
-  mppi::critics::GoalAngleCritic,
-  mppi::critics::CriticFunction)
+  my_mppi::critics::GoalAngleCritic,
+  my_mppi::critics::CriticFunction)

@@ -27,10 +27,10 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 
-#include "nav2_mppi_controller/motion_models.hpp"
-#include "nav2_mppi_controller/optimizer.hpp"
-#include "nav2_mppi_controller/tools/parameters_handler.hpp"
-#include "nav2_mppi_controller/controller.hpp"
+#include "my_mppi_controller/motion_models.hpp"
+#include "my_mppi_controller/optimizer.hpp"
+#include "my_mppi_controller/tools/parameters_handler.hpp"
+#include "my_mppi_controller/controller.hpp"
 
 #include "models.hpp"
 
@@ -148,11 +148,11 @@ getDummyNode(rclcpp::NodeOptions options, std::string node_name = std::string("d
 }
 
 template<typename TNode, typename TCostMap, typename TParamHandler>
-std::shared_ptr<mppi::Optimizer> getDummyOptimizer(
+std::shared_ptr<my_mppi::Optimizer> getDummyOptimizer(
   TNode node, TCostMap costmap_ros,
   TParamHandler * params_handler)
 {
-  std::shared_ptr<mppi::Optimizer> optimizer = std::make_shared<mppi::Optimizer>();
+  std::shared_ptr<my_mppi::Optimizer> optimizer = std::make_shared<my_mppi::Optimizer>();
   std::weak_ptr<rclcpp_lifecycle::LifecycleNode> weak_ptr_node{node};
 
   optimizer->initialize(weak_ptr_node, node->get_name(), costmap_ros, params_handler);
@@ -161,11 +161,11 @@ std::shared_ptr<mppi::Optimizer> getDummyOptimizer(
 }
 
 template<typename TNode, typename TCostMap, typename TFBuffer, typename TParamHandler>
-mppi::PathHandler getDummyPathHandler(
+my_mppi::PathHandler getDummyPathHandler(
   TNode node, TCostMap costmap_ros, TFBuffer tf_buffer,
   TParamHandler * params_handler)
 {
-  mppi::PathHandler path_handler;
+  my_mppi::PathHandler path_handler;
   std::weak_ptr<rclcpp_lifecycle::LifecycleNode> weak_ptr_node{node};
 
   path_handler.initialize(weak_ptr_node, node->get_name(), costmap_ros, tf_buffer, params_handler);
@@ -174,11 +174,11 @@ mppi::PathHandler getDummyPathHandler(
 }
 
 template<typename TNode, typename TCostMap, typename TFBuffer>
-std::shared_ptr<nav2_mppi_controller::MPPIController> getDummyController(
+std::shared_ptr<my_mppi_controller::MPPIController> getDummyController(
   TNode node, TFBuffer tf_buffer,
   TCostMap costmap_ros)
 {
-  auto controller = std::make_shared<nav2_mppi_controller::MPPIController>();
+  auto controller = std::make_shared<my_mppi_controller::MPPIController>();
   std::weak_ptr<rclcpp_lifecycle::LifecycleNode> weak_ptr_node{node};
 
   controller->configure(weak_ptr_node, node->get_name(), tf_buffer, costmap_ros);

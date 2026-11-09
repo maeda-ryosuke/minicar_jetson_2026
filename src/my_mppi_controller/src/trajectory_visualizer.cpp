@@ -13,9 +13,9 @@
 // limitations under the License.
 
 #include <memory>
-#include "nav2_mppi_controller/tools/trajectory_visualizer.hpp"
+#include "my_mppi_controller/tools/trajectory_visualizer.hpp"
 
-namespace mppi
+namespace my_mppi
 {
 
 void TrajectoryVisualizer::on_configure(
@@ -127,4 +127,4 @@ void TrajectoryVisualizer::visualize(const nav_msgs::msg::Path & plan)
   }
 }
 
-}  // namespace mppi
+}  // namespace my_mppi
