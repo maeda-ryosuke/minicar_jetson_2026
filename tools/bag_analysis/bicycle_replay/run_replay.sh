@@ -2,18 +2,23 @@
 # 実走 bag を開ループで再生し、my_mppi_controller と speed_zone_publisher の出力を記録する
 # (replay コンテナ内で実行)。車は bag のとおりに動き、MPPI の出力には従わない。
 #
-#   OVERLAY=/tmp/bws/install bash /tools/bag_analysis/bicycle_replay/run_replay.sh \
-#     /bags/20261105_fast4 /maps/raceline_center_gate.csv
+#   bash /tools/bag_analysis/bicycle_replay/run_replay.sh /bags/20261105_fast4 [raceline.csv]
 #
+# イメージの /ws/install は古くなる(raceline の lookahead が 4 m のままだった)ので、
+# 使うパッケージは毎回 /src(リポジトリの src)から /tmp/replay_ws にビルドし直す。
 # 出力は <bag>/analysis/bicycle/ の replay_bag(記録)と各ノードのログ。
 set -e
 
 BAG=$1
-RACELINE=$2
+RACELINE=${2:-/maps/raceline_center_gate_low2.csv}
 OUT=${3:-$BAG/analysis/bicycle}
 ZONES=${ZONES:-$(dirname "$0")/zones_fast4.yaml}
 
-source "${OVERLAY:-/ws/install}/setup.bash"
+source /ws/install/setup.bash
+(cd /tmp && colcon build --base-paths /src --build-base /tmp/replay_ws/build \
+  --install-base /tmp/replay_ws/install --cmake-args -DCMAKE_BUILD_TYPE=Release \
+  --packages-select minicar_raceline my_mppi_controller speed_zone_publisher minicar_bringup)
+source /tmp/replay_ws/install/setup.bash
 mkdir -p "$OUT"
 rm -rf "$OUT/replay_bag"
 

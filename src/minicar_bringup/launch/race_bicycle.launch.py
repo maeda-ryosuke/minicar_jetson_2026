@@ -13,9 +13,10 @@ speed_zone_publisher.launch.py を起動することだけ。safety_node は通�
     ros2 launch minicar_bringup race_bicycle.launch.py \\
       initial_x:=0.0 initial_y:=0.0 initial_yaw:=0.0
 
-    # MPPI のパラメータ・エリア定義を変える(フルパス)
+    # MPPI のパラメータ・エリア定義を変える。ファイル名だけなら各パッケージの config/ の下、
+    # "/" を含めばそのパス
     ros2 launch minicar_bringup race_bicycle.launch.py \\
-      mppi_params_file:=/path/to/my_mppi_params.yaml zones_yaml:=/path/to/zones.yaml
+      mppi_params_file:=my_mppi_params.yaml zones_yaml:=zones_center_gate_low2_shortcut.yaml
 
 race.launch.py / race_zone.launch.py / minicar_nav2_zone の launch と同時に起動しないこと。
 """
@@ -60,7 +61,7 @@ def generate_launch_description():
         ("initial_x", "0.0"),
         ("initial_y", "0.0"),
         ("initial_yaw", "0.0"),
-        # MPPI(フルパス)とエリア定義
+        # MPPI とエリア定義(ファイル名だけなら各パッケージの config/ の下)
         ("mppi_params_file", str(mppi_config / "my_mppi_params.yaml")),
         ("zones_yaml", str(zone_config / "zones.yaml")),
         ("autostart", "true"),

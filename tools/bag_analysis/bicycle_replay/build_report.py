@@ -167,7 +167,7 @@ a:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans+JP:wght@600&family=Noto+Sans+JP:wght@400;600&display=swap">
 <main>
 <header style="display:grid;gap:10px">
-  <p class="eyebrow">minicar / my_mppi_controller + speed_zone_publisher / 2026-11-09</p>
+  <p class="eyebrow">minicar / my_mppi_controller + speed_zone_publisher / 2026-11-10</p>
   <h1>自転車 MPPI bag 検証</h1>
   <p>PLAN.md Step 8 の検証。実走 bag を開ループで再生し、新しい2つのパッケージの出力
   (<code>/target_speed</code>、MPPI の指令と軌道)が、各時刻の自己位置に対してまともかを確かめた。</p>

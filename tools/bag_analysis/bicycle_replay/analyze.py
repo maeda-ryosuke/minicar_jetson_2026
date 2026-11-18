@@ -80,7 +80,7 @@ def dist_to_polyline(pts, line):
 
 def within_plan(o, plan):
     """最適軌道のうち、経路の長さの内側にある点(走った距離が経路の全長 - 0.2 m 以下)。
-    経路は raceline_manager が lookahead_m(4 m)ぶんしか送らないので、高速では予測の
+    経路は raceline_manager が lookahead_m(6 m)ぶんしか送らないので、高速では予測の
     終わりが経路の先へはみ出し、そこで経路の終点からの距離が伸びる"""
     plan_len = np.linalg.norm(np.diff(plan, axis=0), axis=1).sum()
     run = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(o, axis=0), axis=1))]

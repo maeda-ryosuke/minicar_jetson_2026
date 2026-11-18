@@ -52,7 +52,7 @@ controller_server:
       vx_std: 0.20
       vy_std: 0.0
       # ステア角 δ のノイズ [rad]
-      wz_std: 0.15
+      wz_std: 0.05
       # Humble は cvx を [vx_min, vx_max] でクリップする。ランプやタイムアウト時の 0 が
       # 潰れないよう vx_min は 0.0、vx_max はゾーン速度の最大値以上にする。
       vx_max: 3.5

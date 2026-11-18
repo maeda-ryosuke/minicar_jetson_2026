@@ -5,7 +5,10 @@ wheelbase は vehicle_params.yaml から注入する(motor_driver の ω→δ �
 /target_speed(speed_zone_publisher)が来ないうちは v=0 のまま走らない。
 
     ros2 launch my_mppi_controller my_mppi.launch.py
-    ros2 launch my_mppi_controller my_mppi.launch.py mppi_params_file:=/path/to/params.yaml
+    ros2 launch my_mppi_controller my_mppi.launch.py mppi_params_file:=my_mppi_params.yaml
+
+mppi_params_file はファイル名だけなら my_mppi_controller/config/ の下、"/" を含めばそのパスとして
+読む。存在しなければ起動時に落とす(nav2_mppi.launch.py と同じ)。
 """
 
 from pathlib import Path
@@ -19,8 +22,18 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
+def _resolve_mppi_params(context):
+    """mppi_params_file を実在するパスにする。ファイル名だけなら config/ の下を探す。"""
+    value = LaunchConfiguration("mppi_params_file").perform(context).strip()
+    if "/" not in value:
+        value = str(Path(get_package_share_directory("my_mppi_controller")) / "config" / value)
+    if not Path(value).is_file():
+        raise FileNotFoundError(f"mppi_params_file が見つからない: {value}")
+    return value
+
+
 def _controller_server(context):
-    params_file = LaunchConfiguration("mppi_params_file").perform(context)
+    params_file = _resolve_mppi_params(context)
     vehicle_params_file = LaunchConfiguration("vehicle_params_file").perform(context)
     with open(vehicle_params_file) as f:
         wheelbase = float(yaml.safe_load(f)["vehicle"]["wheelbase"])

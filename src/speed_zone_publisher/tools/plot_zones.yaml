@@ -1,0 +1,5 @@
+# plot_zones.py の設定。相対パスはこのファイルの場所から。
+map: ../../../maps/track_v1.yaml
+raceline: ../../../maps/raceline_center_gate_low2_shortcut.csv
+zones: ../config/zones_center_gate_low2_shortcut.yaml
+output: plot_zones.png

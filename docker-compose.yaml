@@ -91,6 +91,8 @@ services:
       - ./replay_params:/replay_params:rw
       # SLAMパラメータ一括検証スクリプト(tools/slam_sweep)。
       - ./tools:/tools:ro
+      # イメージに焼いた /ws/install は古くなるので、再生ツールはここから最新をビルドする。
+      - ./src:/src:ro
     command: ["sleep", "infinity"]
     stdin_open: true
     tty: true
